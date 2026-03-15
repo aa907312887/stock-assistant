@@ -17,7 +17,7 @@ export interface LoginForm {
 }
 
 export function login(data: LoginForm) {
-  return http.post<TokenResponse>('/auth/login', data)
+  return http.post<TokenResponse>('/auth/login', { username: data.username })
 }
 
 export function fetchMe() {

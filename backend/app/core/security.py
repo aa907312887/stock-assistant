@@ -25,7 +25,7 @@ def create_access_token(sub: str | int, expire_days: int | None = None) -> str:
     )
     payload: dict[str, Any] = {
         "sub": str(sub),
-        "exp": expire,
+        "exp": int(expire.timestamp()),
         "type": "access",
     }
     return jwt.encode(payload, settings.secret_key, algorithm=settings.algorithm)

@@ -13,22 +13,20 @@
         @submit.prevent="onSubmit"
       >
         <el-form-item prop="username">
-          <el-input
+          <el-select
             v-model="form.username"
-            placeholder="用户名"
+            placeholder="请选择用户"
             clearable
-            autofocus
-          />
-        </el-form-item>
-        <el-form-item prop="password">
-          <el-input
-            v-model="form.password"
-            type="password"
-            placeholder="密码（可选，若已配置统一密码可留空）"
-            show-password
-            clearable
+            style="width: 100%"
             @keyup.enter="onSubmit"
-          />
+          >
+            <el-option
+              v-for="name in usernameOptions"
+              :key="name"
+              :label="name"
+              :value="name"
+            />
+          </el-select>
         </el-form-item>
         <el-form-item>
           <el-button type="primary" :loading="loading" style="width: 100%" @click="onSubmit">
@@ -51,11 +49,13 @@ const router = useRouter()
 const route = useRoute()
 const userStore = useUserStore()
 
+const usernameOptions = ['杨佳兴', '王悦']
+
 const formRef = ref<FormInstance>()
 const loading = ref(false)
-const form = reactive({ username: '', password: '' })
+const form = reactive({ username: '' })
 const rules: FormRules = {
-  username: [{ required: true, message: '请输入用户名', trigger: 'blur' }],
+  username: [{ required: true, message: '请选择用户', trigger: 'change' }],
 }
 
 async function onSubmit() {
@@ -65,17 +65,28 @@ async function onSubmit() {
   })
   loading.value = true
   try {
-    const { data } = await login({
-      username: form.username,
-      password: form.password || undefined,
-    })
+    const { data } = await login({ username: form.username.trim() })
     userStore.setLogin(data.access_token, data.user)
     ElMessage.success('登录成功')
     const redirect = (route.query.redirect as string) || '/'
     router.push(redirect)
   } catch (e: unknown) {
-    const msg = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail || '登录失败'
-    ElMessage.error(msg)
+    const err = e as {
+      message?: string
+      response?: { status?: number; data?: { detail?: string; debug?: string } }
+    }
+    const statusCode = err?.response?.status
+    const detail = err?.response?.data?.detail
+    const debug = err?.response?.data?.debug
+    if (statusCode === 401 && detail) {
+      ElMessage.error(detail)
+    } else if (statusCode && statusCode >= 500) {
+      ElMessage.error(debug ? `服务器错误: ${debug}` : '服务器 500，请查看后端日志 backend/logs/app.log')
+    } else if (!statusCode || statusCode === 0) {
+      ElMessage.error(err?.message ? `请求失败: ${err.message}` : '网络异常，请确认后端已启动 (端口 8000)')
+    } else {
+      ElMessage.error(detail || '登录失败')
+    }
   } finally {
     loading.value = false
   }

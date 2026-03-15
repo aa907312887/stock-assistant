@@ -8,6 +8,8 @@
 
 # backend
 backend/.venv/
+backend/logs/
+*.log
 backend/__pycache__/
 backend/**/__pycache__/
 *.py[cod]
