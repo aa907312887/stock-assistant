@@ -1,5 +1,8 @@
-# env
+# env（含敏感信息，切勿提交）
 .env
+.env.*
+!.env.example
+!**/.env.example
 .env.local
 *.local
 
