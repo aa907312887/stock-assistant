@@ -5,6 +5,7 @@ set -e
 JSON_MODE=false
 SHORT_NAME=""
 BRANCH_NUMBER=""
+NO_BRANCH=false
 ARGS=()
 i=1
 while [ $i -le $# ]; do
@@ -12,6 +13,9 @@ while [ $i -le $# ]; do
     case "$arg" in
         --json) 
             JSON_MODE=true 
+            ;;
+        --no-branch)
+            NO_BRANCH=true
             ;;
         --short-name)
             if [ $((i + 1)) -gt $# ]; then
@@ -41,17 +45,18 @@ while [ $i -le $# ]; do
             BRANCH_NUMBER="$next_arg"
             ;;
         --help|-h) 
-            echo "Usage: $0 [--json] [--short-name <name>] [--number N] <feature_description>"
+            echo "Usage: $0 [--json] [--no-branch] [--short-name <name>] [--number N] <feature_description>"
             echo ""
             echo "Options:"
             echo "  --json              Output in JSON format"
-            echo "  --short-name <name> Provide a custom short name (2-4 words) for the branch"
-            echo "  --number N          Specify branch number manually (overrides auto-detection)"
+            echo "  --no-branch         Do not create or switch git branch (use current branch, e.g. master)"
+            echo "  --short-name <name> Short name for feature dir (e.g. Chinese: 综合选股); when --no-branch, used as-is for dir name"
+            echo "  --number N          Specify feature number manually (overrides auto-detection)"
             echo "  --help, -h          Show this help message"
             echo ""
             echo "Examples:"
-            echo "  $0 'Add user authentication system' --short-name 'user-auth'"
-            echo "  $0 'Implement OAuth2 integration for API' --number 5"
+            echo "  $0 '综合选股' --json --no-branch --short-name '综合选股'"
+            echo "  $0 'Add user authentication' --short-name 'user-auth'"
             exit 0
             ;;
         *) 
@@ -63,7 +68,7 @@ done
 
 FEATURE_DESCRIPTION="${ARGS[*]}"
 if [ -z "$FEATURE_DESCRIPTION" ]; then
-    echo "Usage: $0 [--json] [--short-name <name>] [--number N] <feature_description>" >&2
+    echo "Usage: $0 [--json] [--no-branch] [--short-name <name>] [--number N] <feature_description>" >&2
     exit 1
 fi
 
@@ -246,53 +251,53 @@ generate_branch_name() {
 
 # Generate branch name
 if [ -n "$SHORT_NAME" ]; then
-    # Use provided short name, just clean it up
     BRANCH_SUFFIX=$(clean_branch_name "$SHORT_NAME")
+    # For feature directory: use short name as-is (e.g. Chinese 综合选股), only trim spaces
+    DIR_SUFFIX=$(echo "$SHORT_NAME" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
 else
-    # Generate from description with smart filtering
     BRANCH_SUFFIX=$(generate_branch_name "$FEATURE_DESCRIPTION")
+    DIR_SUFFIX="$BRANCH_SUFFIX"
 fi
 
-# Determine branch number
+# Determine feature number
 if [ -z "$BRANCH_NUMBER" ]; then
-    if [ "$HAS_GIT" = true ]; then
-        # Check existing branches on remotes
+    if [ "$NO_BRANCH" = true ]; then
+        # When not creating branch, derive number from specs directories only
+        HIGHEST=$(get_highest_from_specs "$SPECS_DIR")
+        BRANCH_NUMBER=$((HIGHEST + 1))
+    elif [ "$HAS_GIT" = true ]; then
         BRANCH_NUMBER=$(check_existing_branches "$SPECS_DIR")
     else
-        # Fall back to local directory check
         HIGHEST=$(get_highest_from_specs "$SPECS_DIR")
         BRANCH_NUMBER=$((HIGHEST + 1))
     fi
 fi
 
-# Force base-10 interpretation to prevent octal conversion (e.g., 010 → 8 in octal, but should be 10 in decimal)
+# Force base-10 interpretation to prevent octal conversion
 FEATURE_NUM=$(printf "%03d" "$((10#$BRANCH_NUMBER))")
-BRANCH_NAME="${FEATURE_NUM}-${BRANCH_SUFFIX}"
 
-# GitHub enforces a 244-byte limit on branch names
-# Validate and truncate if necessary
-MAX_BRANCH_LENGTH=244
-if [ ${#BRANCH_NAME} -gt $MAX_BRANCH_LENGTH ]; then
-    # Calculate how much we need to trim from suffix
-    # Account for: feature number (3) + hyphen (1) = 4 chars
-    MAX_SUFFIX_LENGTH=$((MAX_BRANCH_LENGTH - 4))
-    
-    # Truncate suffix at word boundary if possible
-    TRUNCATED_SUFFIX=$(echo "$BRANCH_SUFFIX" | cut -c1-$MAX_SUFFIX_LENGTH)
-    # Remove trailing hyphen if truncation created one
-    TRUNCATED_SUFFIX=$(echo "$TRUNCATED_SUFFIX" | sed 's/-$//')
-    
-    ORIGINAL_BRANCH_NAME="$BRANCH_NAME"
-    BRANCH_NAME="${FEATURE_NUM}-${TRUNCATED_SUFFIX}"
-    
-    >&2 echo "[specify] Warning: Branch name exceeded GitHub's 244-byte limit"
-    >&2 echo "[specify] Original: $ORIGINAL_BRANCH_NAME (${#ORIGINAL_BRANCH_NAME} bytes)"
-    >&2 echo "[specify] Truncated to: $BRANCH_NAME (${#BRANCH_NAME} bytes)"
+# Feature directory: use number + DIR_SUFFIX (supports Chinese, e.g. 002-综合选股)
+FEATURE_DIR="$SPECS_DIR/${FEATURE_NUM}-${DIR_SUFFIX}"
+
+# Branch name only used when creating a new branch (ASCII for git)
+BRANCH_NAME="${FEATURE_NUM}-${BRANCH_SUFFIX}"
+if [ "$NO_BRANCH" = true ]; then
+    BRANCH_NAME="master"
+else
+    # GitHub enforces a 244-byte limit on branch names
+    MAX_BRANCH_LENGTH=244
+    if [ ${#BRANCH_NAME} -gt $MAX_BRANCH_LENGTH ]; then
+        MAX_SUFFIX_LENGTH=$((MAX_BRANCH_LENGTH - 4))
+        TRUNCATED_SUFFIX=$(echo "$BRANCH_SUFFIX" | cut -c1-$MAX_SUFFIX_LENGTH | sed 's/-$//')
+        BRANCH_NAME="${FEATURE_NUM}-${TRUNCATED_SUFFIX}"
+        >&2 echo "[specify] Warning: Branch name truncated to $BRANCH_NAME"
+    fi
 fi
 
-if [ "$HAS_GIT" = true ]; then
+if [ "$NO_BRANCH" = true ]; then
+    >&2 echo "[specify] No branch created; using current branch (e.g. master). Feature dir: $FEATURE_DIR"
+elif [ "$HAS_GIT" = true ]; then
     if ! git checkout -b "$BRANCH_NAME" 2>/dev/null; then
-        # Check if branch already exists
         if git branch --list "$BRANCH_NAME" | grep -q .; then
             >&2 echo "Error: Branch '$BRANCH_NAME' already exists. Please use a different feature name or specify a different number with --number."
             exit 1
@@ -304,16 +309,15 @@ if [ "$HAS_GIT" = true ]; then
 else
     >&2 echo "[specify] Warning: Git repository not detected; skipped branch creation for $BRANCH_NAME"
 fi
-
-FEATURE_DIR="$SPECS_DIR/$BRANCH_NAME"
 mkdir -p "$FEATURE_DIR"
 
 TEMPLATE=$(resolve_template "spec-template" "$REPO_ROOT")
 SPEC_FILE="$FEATURE_DIR/spec.md"
 if [ -n "$TEMPLATE" ] && [ -f "$TEMPLATE" ]; then cp "$TEMPLATE" "$SPEC_FILE"; else touch "$SPEC_FILE"; fi
 
-# Inform the user how to persist the feature variable in their own shell
-printf '# To persist: export SPECIFY_FEATURE=%q\n' "$BRANCH_NAME" >&2
+# Inform the user how to persist the feature variable (use feature dir name for spec lookup)
+FEATURE_ID="${FEATURE_NUM}-${DIR_SUFFIX}"
+printf '# To persist: export SPECIFY_FEATURE=%q\n' "$FEATURE_ID" >&2
 
 if $JSON_MODE; then
     if command -v jq >/dev/null 2>&1; then

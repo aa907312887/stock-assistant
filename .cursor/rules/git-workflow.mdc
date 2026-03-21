@@ -1,0 +1,10 @@
+---
+description: Git 工作流约束——主分支直接开发并推送，不新建分支
+alwaysApply: true
+---
+
+# Git 工作流
+
+- **在主分支上直接开发**：默认主分支为 `main`（若仓库使用 `master` 则指 `master`）。所有功能与修复均在该分支上提交，**不要新建功能分支**。
+- **直接推送到远程**：开发完成后执行 `git push origin main`（或 `git push origin master`）推送到远程，无需开 PR、无需合并其他分支。
+- **不主动建议**：创建新分支、切换分支、merge 其他分支、PR 流程等；若用户明确要求分支或 PR 再另行处理。

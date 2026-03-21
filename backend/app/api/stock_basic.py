@@ -1,0 +1,97 @@
+"""股票基本信息：分页列表与手动同步。"""
+import logging
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import func
+from sqlalchemy.orm import Session
+
+from app.database import get_db
+from app.models import StockBasic
+from app.schemas.stock_basic import StockBasicItem, StockBasicListResponse, StockBasicSyncResponse
+from app.services.stock_basic_sync_service import run_sync_basic_only
+from app.services.tushare_client import TushareClientError
+
+logger = logging.getLogger(__name__)
+
+router = APIRouter(prefix="/stock/basic", tags=["股票基本信息"])
+
+# 历史数据可能存为 zhitu，对外统一展示为 tushare
+_LEGACY_SOURCE_MAP = {"zhitu", "zhitu_api"}
+
+
+def _normalize_data_source(raw: str | None) -> str:
+    if not raw:
+        return "tushare"
+    key = raw.strip().lower()
+    if key in _LEGACY_SOURCE_MAP:
+        return "tushare"
+    return raw
+
+
+@router.get("", response_model=StockBasicListResponse)
+def list_stock_basic(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=200),
+    code: str | None = Query(None, description="股票代码，模糊"),
+    name: str | None = Query(None, description="名称，模糊"),
+    market: str | None = Query(None, description="市场/交易所"),
+    industry: str | None = Query(None, description="行业，模糊"),
+    db: Session = Depends(get_db),
+) -> StockBasicListResponse:
+    q = db.query(StockBasic)
+    if code:
+        q = q.filter(StockBasic.code.like(f"%{code.strip()}%"))
+    if name:
+        q = q.filter(StockBasic.name.like(f"%{name.strip()}%"))
+    if market:
+        m = market.strip()
+        q = q.filter(StockBasic.market == m)
+    if industry:
+        q = q.filter(StockBasic.industry_name.like(f"%{industry.strip()}%"))
+    total = q.count()
+    rows = (
+        q.order_by(StockBasic.code)
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+        .all()
+    )
+    last_synced_at = db.query(func.max(StockBasic.synced_at)).scalar()
+    items = [
+        StockBasicItem(
+            code=r.code,
+            name=r.name,
+            market=r.market,
+            industry_name=r.industry_name,
+            region=r.region,
+            list_date=r.list_date,
+            synced_at=r.synced_at,
+            data_source=_normalize_data_source(r.data_source),
+        )
+        for r in rows
+    ]
+    return StockBasicListResponse(
+        items=items,
+        total=total,
+        page=page,
+        page_size=page_size,
+        last_synced_at=last_synced_at,
+    )
+
+
+@router.post("/sync", response_model=StockBasicSyncResponse)
+def trigger_stock_basic_sync(db: Session = Depends(get_db)) -> StockBasicSyncResponse:
+    """请求内同步执行，完成后返回写入条数。"""
+    try:
+        stats = run_sync_basic_only(db)
+    except TushareClientError as e:
+        logger.exception("stock_basic 同步失败: %s", e)
+        raise HTTPException(status_code=502, detail=f"拉取股票列表失败：{e}") from e
+    except Exception as e:
+        logger.exception("stock_basic 同步失败: %s", e)
+        raise HTTPException(status_code=500, detail=f"同步失败：{e}") from e
+    n = stats.get("stock_basic", 0)
+    return StockBasicSyncResponse(
+        status="ok",
+        message=f"已写入 {n} 条股票基本信息",
+        stock_basic=n,
+    )

@@ -12,9 +12,13 @@ const router = createRouter({
     },
     {
       path: '/',
-      name: 'home',
-      component: () => import('@/views/HomeView.vue'),
+      component: () => import('@/views/Layout.vue'),
       meta: { requiresAuth: true },
+      children: [
+        { path: '', name: 'home', component: () => import('@/views/HomeView.vue') },
+        { path: 'stock-screening', name: 'stock-screening', component: () => import('@/views/StockScreeningView.vue') },
+        { path: 'stock-basic', name: 'stock-basic', component: () => import('@/views/StockBasicView.vue') },
+      ],
     },
     { path: '/:pathMatch(.*)*', redirect: '/' },
   ],

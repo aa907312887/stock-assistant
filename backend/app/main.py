@@ -1,13 +1,19 @@
+import asyncio
 import logging
 import os
 import sys
+import threading
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from app.api.admin import router as admin_router
 from app.api.auth import router as auth_router
+from app.api.stock import router as stock_router
+from app.api.stock_basic import router as stock_basic_router
+from app.core.scheduler import run_sync_once_now, shutdown_scheduler, start_scheduler
 
 # 日志：同时输出到控制台和文件 backend/logs/app.log（文件每次写入后 flush，避免 500 时看不到）
 LOG_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "logs")
@@ -39,11 +45,24 @@ logging.getLogger("uvicorn.access").setLevel(logging.INFO)
 logger = logging.getLogger(__name__)
 
 
+def _deferred_sync() -> None:
+    """部署时首次拉数：延迟 30 秒后执行一次同步。"""
+    import time
+    time.sleep(30)
+    try:
+        run_sync_once_now()
+    except Exception as e:
+        logger.exception("部署时首次同步失败: %s", e)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Backend started, logs: %s", LOG_FILE)
+    start_scheduler()
+    # 可选：部署后 30 秒执行一次同步
+    threading.Thread(target=_deferred_sync, daemon=True).start()
     yield
-    pass
+    shutdown_scheduler()
 
 
 app = FastAPI(
@@ -61,6 +80,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.include_router(auth_router, prefix="/api")
+app.include_router(admin_router, prefix="/api")
+app.include_router(stock_router, prefix="/api")
+app.include_router(stock_basic_router, prefix="/api")
 
 
 @app.exception_handler(Exception)

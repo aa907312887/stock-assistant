@@ -26,30 +26,25 @@ The text the user typed after `/speckit.specify` in the triggering message **is*
 
 Given that feature description, do this:
 
-1. **Generate a concise short name** (2-4 words) for the branch:
-   - Analyze the feature description and extract the most meaningful keywords
-   - Create a 2-4 word short name that captures the essence of the feature
-   - Use action-noun format when possible (e.g., "add-user-auth", "fix-payment-bug")
-   - Preserve technical terms and acronyms (OAuth2, API, JWT, etc.)
-   - Keep it concise but descriptive enough to understand the feature at a glance
-   - Examples:
-     - "I want to add user authentication" → "user-auth"
-     - "Implement OAuth2 integration for the API" → "oauth2-api-integration"
-     - "Create a dashboard for analytics" → "analytics-dashboard"
-     - "Fix payment processing timeout bug" → "fix-payment-timeout"
+1. **生成功能的中文简短名称**（2–4 个词），用于功能目录名：
+   - 从功能描述中提取关键词，生成**中文**简短名称
+   - **不要使用英文**：目录名一律为中文，例如「综合选股」「用户登录」
+   - 示例：
+     - "我要开发综合选股" → "综合选股"
+     - "先做用户登录" → "用户登录"
+     - "持仓助手" → "持仓助手"
 
-2. **Create the feature branch** by running the script with `--short-name` (and `--json`), and do NOT pass `--number` (the script auto-detects the next globally available number across all branches and spec directories):
+2. **在 master 上创建功能目录与 spec 文件**：调用脚本时必须传入 `--no-branch` 和 `--short-name "中文名称"`（及 `--json`），不创建、不切换 git 分支；脚本仅创建功能目录（如 `specs/002-综合选股/`）和 spec 文件：
 
-   - Bash example: `.specify/scripts/bash/create-new-feature.sh "$ARGUMENTS" --json --short-name "user-auth" "Add user authentication"`
-   - PowerShell example: `.specify/scripts/bash/create-new-feature.sh "$ARGUMENTS" -Json -ShortName "user-auth" "Add user authentication"`
+   - Bash 示例：`.specify/scripts/bash/create-new-feature.sh "功能描述" --json --no-branch --short-name "综合选股"`
+   - PowerShell 示例：`.specify/scripts/bash/create-new-feature.sh "功能描述" -Json -NoBranch -ShortName "综合选股"`
 
-   **IMPORTANT**:
-   - Do NOT pass `--number` — the script determines the correct next number automatically
-   - Always include the JSON flag (`--json` for Bash, `-Json` for PowerShell) so the output can be parsed reliably
-   - You must only ever run this script once per feature
-   - The JSON is provided in the terminal as output - always refer to it to get the actual content you're looking for
-   - The JSON output will contain BRANCH_NAME and SPEC_FILE paths
-   - For single quotes in args like "I'm Groot", use escape syntax: e.g 'I'\''m Groot' (or double-quote if possible: "I'm Groot")
+   **注意**：
+   - 必须传 `--no-branch`，功能分支统一使用 master，不新建分支
+   - 必须传 `--short-name` 且使用**中文**，生成目录名为 `002-综合选股` 这种形式，不要英文（如 002-comprehensive-stock-selection）
+   - 不要传 `--number`，脚本会自动检测下一个可用编号
+   - 必须传 `--json`，以便解析输出；JSON 中包含 BRANCH_NAME（此时为 "master"）、SPEC_FILE 路径、FEATURE_NUM
+   - 脚本只执行一次
 
 3. Load `.specify/templates/spec-template.md` to understand required sections. **模板与生成的 spec 均使用中文**（见上方语言约定）。
 
@@ -177,9 +172,9 @@ Given that feature description, do this:
 
    d. **更新检查清单**：每次校验后更新检查清单文件中的通过/未通过状态。
 
-7. 报告完成：分支名、spec 文件路径、检查清单结果及是否可进入下一阶段（`/speckit.clarify` 或 `/speckit.plan`）。
+7. 报告完成：功能目录名（如 `002-综合选股`）、spec 文件路径、检查清单结果及是否可进入下一阶段（`/speckit.clarify` 或 `/speckit.plan`）。不报告分支名（始终为 master）。
 
-**注意**：脚本会创建并检出新分支并初始化 spec 文件后再写入。
+**注意**：脚本不会创建或切换分支，仅在当前分支（master）下创建功能目录与 spec 文件并写入。
 
 ## 简要指南
 
