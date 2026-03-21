@@ -14,6 +14,9 @@ from app.config import settings
 
 logger = logging.getLogger(__name__)
 
+# 与定时任务/同步链路检索一致，标明 Tushare 封装层
+TUSHARE_CLIENT_ALERT = "[Tushare客户端告警]"
+
 MAX_RETRIES = 3
 RETRY_INTERVAL_SEC = 5
 RATE_PAUSE_SEC = 0.06
@@ -37,6 +40,10 @@ def _get_pro() -> Any:
     global _pro_api, _cached_token
     token = (settings.tushare_token or "").strip()
     if not token:
+        logger.error(
+            "%s 调用方法=tushare_client._get_pro | 接口=未初始化 pro_api | 原因=TUSHARE_TOKEN 未配置（请在 backend/.env 中设置）",
+            TUSHARE_CLIENT_ALERT,
+        )
         raise TushareClientError("TUSHARE_TOKEN 未配置（请在 backend/.env 中设置）")
     with _pro_lock:
         if _pro_api is None or _cached_token != token:

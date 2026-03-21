@@ -7,6 +7,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
+from app.core.scheduled_job_logging import ALERT_PREFIX, log_sync_step_failure
 from app.models import StockBasic, StockDailyQuote, StockFinancialReport
 from app.services.tushare_client import (
     TushareClientError,
@@ -75,7 +76,13 @@ def run_sync(db: Session, trade_date: date | None = None, limit: int | None = No
         try:
             rows = get_stock_list()
         except TushareClientError as e:
-            logger.error("拉取股票列表失败: %s", e)
+            log_sync_step_failure(
+                logger,
+                business_callable="stock_sync_service.run_sync",
+                step="拉取全市场股票列表",
+                external_api="Tushare pro.stock_basic（上市列表 list_status=L）",
+                exc=e,
+            )
             raise
         if limit is not None:
             rows = rows[:limit]
@@ -136,7 +143,13 @@ def run_sync(db: Session, trade_date: date | None = None, limit: int | None = No
         try:
             daily_map = get_daily_by_trade_date(trade_date)
         except TushareClientError as e:
-            logger.error("拉取全市场日线失败: %s", e)
+            log_sync_step_failure(
+                logger,
+                business_callable="stock_sync_service.run_sync",
+                step=f"拉取交易日 {trade_date} 全市场日线",
+                external_api="Tushare pro.daily（trade_date）",
+                exc=e,
+            )
             raise
         logger.info("全市场日线条数: %s", len(daily_map))
 
@@ -234,7 +247,12 @@ def run_sync(db: Session, trade_date: date | None = None, limit: int | None = No
                         fin_candidates.sort(key=lambda x: x[0])
                         fin_row = fin_candidates[-1][1]
             except TushareClientError as e:
-                logger.warning("拉取利润表失败 code=%s error=%s", dm, e)
+                logger.warning(
+                    "%s [同步单标的可继续] 业务方法=run_sync | 步骤=拉取利润表 | 外部接口=Tushare pro.income | ts_code=%s | 原因=%s",
+                    ALERT_PREFIX,
+                    dm,
+                    e,
+                )
             if FIN_REQ_PAUSE_SEC > 0:
                 time.sleep(FIN_REQ_PAUSE_SEC)
 
@@ -288,8 +306,19 @@ def run_sync(db: Session, trade_date: date | None = None, limit: int | None = No
             stats["stock_daily_quote"],
             stats["stock_financial_report"],
         )
+    except TushareClientError:
+        db.rollback()
+        # 已在上方 log_sync_step_failure 中打出接口与原因，此处不再重复
+        raise
     except Exception as e:
         db.rollback()
-        logger.exception("同步失败: %s", e)
+        logger.error(
+            "%s [同步整体失败] 业务方法=stock_sync_service.run_sync | trade_date=%s | 异常类型=%s | 原因=%s",
+            ALERT_PREFIX,
+            trade_date,
+            type(e).__name__,
+            e,
+            exc_info=e,
+        )
         raise
     return stats

@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
 
+from app.core.scheduled_job_logging import log_sync_step_failure
 from app.models import StockBasic
 from app.services.tushare_client import TushareClientError, get_stock_list
 from app.services.stock_sync_service import _safe_date
@@ -27,7 +28,13 @@ def run_sync_basic_only(db: Session, *, limit: int | None = None) -> dict[str, i
         try:
             rows = get_stock_list()
         except TushareClientError as e:
-            logger.error("拉取股票列表失败: %s", e)
+            log_sync_step_failure(
+                logger,
+                business_callable="stock_basic_sync_service.run_sync_basic_only",
+                step="拉取全市场股票列表",
+                external_api="Tushare pro.stock_basic（上市列表 list_status=L）",
+                exc=e,
+            )
             raise
         if limit is not None:
             rows = rows[:limit]

@@ -5,10 +5,15 @@ from datetime import date
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 
+from app.core.scheduled_job_logging import guess_tushare_api_from_exception, log_scheduled_job_failure
 from app.database import SessionLocal
 from app.services.stock_sync_service import run_sync
 
 logger = logging.getLogger(__name__)
+
+_JOB_STOCK_SYNC = "stock_sync"
+_ENTRY_SYNC = "app.core.scheduler._job_sync_stock"
+_BUSINESS_RUN_SYNC = "app.services.stock_sync_service.run_sync"
 
 _scheduler: BackgroundScheduler | None = None
 CRON_HOUR = 17
@@ -22,7 +27,14 @@ def _job_sync_stock() -> None:
     try:
         run_sync(db, trade_date=date.today())
     except Exception as e:
-        logger.exception("定时同步失败: %s", e)
+        log_scheduled_job_failure(
+            logger,
+            job_id=_JOB_STOCK_SYNC,
+            scheduler_entry=_ENTRY_SYNC,
+            business_callable=_BUSINESS_RUN_SYNC,
+            external_api=guess_tushare_api_from_exception(e),
+            exc=e,
+        )
     finally:
         db.close()
 
@@ -36,7 +48,7 @@ def start_scheduler() -> None:
     _scheduler.add_job(
         _job_sync_stock,
         trigger=CronTrigger(hour=CRON_HOUR, minute=CRON_MINUTE, timezone=TIMEZONE),
-        id="stock_sync",
+        id=_JOB_STOCK_SYNC,
         replace_existing=True,
     )
     _scheduler.start()

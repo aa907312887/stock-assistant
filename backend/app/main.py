@@ -47,13 +47,14 @@ logger = logging.getLogger(__name__)
 
 
 def _deferred_sync() -> None:
-    """部署时首次拉数：延迟 30 秒后执行一次同步。"""
+    """部署时首次拉数：延迟 30 秒后执行一次同步（失败时由 scheduler._job_sync_stock 打 [定时任务告警]）。"""
     import time
     time.sleep(30)
     try:
         run_sync_once_now()
     except Exception as e:
-        logger.exception("部署时首次同步失败: %s", e)
+        # 与定时任务共用 _job_sync_stock；若此处仍抛错，多为线程边界问题，补打一行
+        logger.exception("部署时首次同步线程异常（若同步失败通常已在 _job_sync_stock 中记录告警）: %s", e)
 
 
 @asynccontextmanager
