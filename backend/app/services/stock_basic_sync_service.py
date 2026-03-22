@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from app.core.scheduled_job_logging import log_sync_step_failure
 from app.models import StockBasic
 from app.services.tushare_client import TushareClientError, get_stock_list
-from app.services.stock_sync_service import _safe_date
+from app.services.stock_sync_utils import safe_date
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +22,7 @@ def run_sync_basic_only(db: Session, *, limit: int | None = None) -> dict[str, i
     """
     batch_tag = datetime.now().strftime("%Y%m%d-%H%M%S")
     sync_batch_id = f"basic-{batch_tag}"
-    stats = {"stock_basic": 0}
+    stats = {"stock_basic": 0, "basic_rows": 0}
     logger.info("stock_basic 仅基础同步开始 batch=%s limit=%s", sync_batch_id, limit)
     try:
         try:
@@ -52,7 +52,7 @@ def run_sync_basic_only(db: Session, *, limit: int | None = None) -> dict[str, i
             jys = row.get("jys") or ""
             region = row.get("region")
             ind_name = row.get("industry_name")
-            list_d = _safe_date(row.get("list_date"))
+            list_d = safe_date(row.get("list_date"))
             existing = db.query(StockBasic).filter(StockBasic.code == dm).first()
             if existing:
                 existing.name = mc
@@ -80,6 +80,7 @@ def run_sync_basic_only(db: Session, *, limit: int | None = None) -> dict[str, i
                     )
                 )
             stats["stock_basic"] += 1
+            stats["basic_rows"] += 1
         db.commit()
         logger.info("stock_basic 仅基础同步结束 写入=%s", stats["stock_basic"])
     except Exception:

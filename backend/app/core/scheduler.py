@@ -1,15 +1,25 @@
-"""APScheduler：每日 17:00 执行股票数据同步。"""
+"""APScheduler：交易日每日 17:00 执行股票数据同步（基础 + 日线 + 周线 + 月线批量）。"""
 import logging
-from datetime import date
+from datetime import date, datetime, timedelta
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 
 from app.core.scheduled_job_logging import guess_tushare_api_from_exception, log_scheduled_job_failure
 from app.database import SessionLocal
-from app.services.stock_sync_service import run_sync
+from app.models import SyncJobRun
+from app.services.stock_sync_orchestrator import run_stock_sync
+from app.services.sync_task_runner import (
+    ensure_auto_tasks_for_trade_date,
+    execute_pending_auto_sync,
+    mark_stale_running_sync_tasks_failed,
+)
+from app.services.tushare_client import get_latest_open_trade_date
 
 logger = logging.getLogger(__name__)
+
+# 定时任务已改为 sync_task 子任务表驱动；保留常量供日志说明
+SCHEDULED_SYNC_MODULES = ["basic", "daily", "weekly", "monthly"]
 
 _JOB_STOCK_SYNC = "stock_sync"
 _ENTRY_SYNC = "app.core.scheduler._job_sync_stock"
@@ -22,19 +32,57 @@ TIMEZONE = "Asia/Shanghai"
 
 
 def _job_sync_stock() -> None:
-    """定时任务入口：创建独立 Session 执行同步。"""
+    """定时任务入口：交易日插入 auto 子任务并执行 pending（任务驱动）。"""
+    today = date.today()
+    latest = get_latest_open_trade_date(today)
+    if latest is None or latest != today:
+        logger.info("定时同步跳过：今日非交易日（最近开市日=%s）", latest)
+        return
     db = SessionLocal()
     try:
-        run_sync(db, trade_date=date.today())
+        ensure_auto_tasks_for_trade_date(db, today)
+        result = execute_pending_auto_sync(db, today)
+        if result.get("skipped"):
+            logger.info("定时同步无需执行：%s", result.get("reason", "skipped"))
+        else:
+            logger.info(
+                "定时同步完成 batch=%s status=%s",
+                result.get("batch_id"),
+                result.get("status"),
+            )
     except Exception as e:
         log_scheduled_job_failure(
             logger,
             job_id=_JOB_STOCK_SYNC,
             scheduler_entry=_ENTRY_SYNC,
-            business_callable=_BUSINESS_RUN_SYNC,
+            business_callable="app.services.sync_task_runner.execute_pending_auto_sync",
             external_api=guess_tushare_api_from_exception(e),
             exc=e,
         )
+    finally:
+        db.close()
+
+
+def _mark_stale_running_jobs_failed() -> None:
+    """将长时间停留在 running 的记录标为失败，避免进程中断后页面永远显示运行中。"""
+    db = SessionLocal()
+    try:
+        cutoff = datetime.now() - timedelta(hours=2)
+        rows = (
+            db.query(SyncJobRun)
+            .filter(SyncJobRun.status == "running", SyncJobRun.started_at < cutoff)
+            .all()
+        )
+        for row in rows:
+            row.status = "failed"
+            row.finished_at = datetime.now()
+            row.error_message = (
+                "任务未正常结束（进程中断或超时未写入完成状态）。"
+                "若曾执行财报全市场逐标的同步，耗时可较长，请查看日志或缩小范围。"
+            )
+        if rows:
+            db.commit()
+            logger.warning("已将 %s 条超时仍为 running 的同步任务标为 failed", len(rows))
     finally:
         db.close()
 
@@ -52,7 +100,19 @@ def start_scheduler() -> None:
         replace_existing=True,
     )
     _scheduler.start()
-    logger.info("Scheduler started: stock_sync daily at %s:%s %s", CRON_HOUR, CRON_MINUTE, TIMEZONE)
+    _mark_stale_running_jobs_failed()
+    _db = SessionLocal()
+    try:
+        mark_stale_running_sync_tasks_failed(_db)
+    finally:
+        _db.close()
+    logger.info(
+        "Scheduler started: stock_sync daily at %s:%s %s modules=%s",
+        CRON_HOUR,
+        CRON_MINUTE,
+        TIMEZONE,
+        SCHEDULED_SYNC_MODULES,
+    )
 
 
 def shutdown_scheduler() -> None:
@@ -65,6 +125,26 @@ def shutdown_scheduler() -> None:
     logger.info("Scheduler stopped")
 
 
-def run_sync_once_now() -> None:
-    """立即执行一次同步（供部署时或手动触发调用）。"""
-    _job_sync_stock()
+def run_sync_once_now(
+    *,
+    batch_id: str | None = None,
+    mode: str = "incremental",
+    modules: list[str] | None = None,
+    start_date: date | None = None,
+    end_date: date | None = None,
+    requested_trade_date: date | None = None,
+) -> None:
+    """立即执行一次同步（供手动触发调用）。"""
+    db = SessionLocal()
+    try:
+        run_stock_sync(
+            db,
+            batch_id=batch_id,
+            mode=mode,
+            modules=modules,
+            start_date=start_date,
+            end_date=end_date,
+            requested_trade_date=requested_trade_date or date.today(),
+        )
+    finally:
+        db.close()

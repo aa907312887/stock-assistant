@@ -1,8 +1,6 @@
-import asyncio
 import logging
 import os
 import sys
-import threading
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
@@ -14,7 +12,7 @@ from app.api.auth import router as auth_router
 from app.api.stock import router as stock_router
 from app.api.stock_basic import router as stock_basic_router
 from app.api.investment_logic import router as investment_logic_router
-from app.core.scheduler import run_sync_once_now, shutdown_scheduler, start_scheduler
+from app.core.scheduler import shutdown_scheduler, start_scheduler
 
 # 日志：同时输出到控制台和文件 backend/logs/app.log（文件每次写入后 flush，避免 500 时看不到）
 LOG_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "logs")
@@ -45,24 +43,10 @@ logging.getLogger("uvicorn.access").setLevel(logging.INFO)
 
 logger = logging.getLogger(__name__)
 
-
-def _deferred_sync() -> None:
-    """部署时首次拉数：延迟 30 秒后执行一次同步（失败时由 scheduler._job_sync_stock 打 [定时任务告警]）。"""
-    import time
-    time.sleep(30)
-    try:
-        run_sync_once_now()
-    except Exception as e:
-        # 与定时任务共用 _job_sync_stock；若此处仍抛错，多为线程边界问题，补打一行
-        logger.exception("部署时首次同步线程异常（若同步失败通常已在 _job_sync_stock 中记录告警）: %s", e)
-
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Backend started, logs: %s", LOG_FILE)
     start_scheduler()
-    # 可选：部署后 30 秒执行一次同步
-    threading.Thread(target=_deferred_sync, daemon=True).start()
     yield
     shutdown_scheduler()
 

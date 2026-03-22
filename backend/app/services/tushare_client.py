@@ -1,4 +1,4 @@
-"""Tushare Pro API 封装：股票列表、全市场日线、利润表。"""
+"""Tushare Pro API 封装：股票列表、日线、周线、月线、日级指标、财报与交易日历。"""
 import json
 import logging
 import time
@@ -138,7 +138,7 @@ def get_daily_by_trade_date(trade_date: date) -> dict[str, dict[str, Any]]:
     raise TushareClientError(f"Tushare daily 失败: {last_err}") from last_err
 
 
-def normalize_daily_bar(row: dict[str, Any] | None) -> dict[str, Any] | None:
+def normalize_bar(row: dict[str, Any] | None) -> dict[str, Any] | None:
     """
     将 Tushare daily 行转为与旧同步逻辑兼容的字段：o/h/l/c/pc/a/v，
     其中成交额转为元、成交量转为股；pct_chg、change 为涨跌幅与涨跌额。
@@ -184,6 +184,116 @@ def normalize_daily_bar(row: dict[str, Any] | None) -> dict[str, Any] | None:
     }
 
 
+def normalize_daily_bar(row: dict[str, Any] | None) -> dict[str, Any] | None:
+    """兼容旧调用，内部复用通用 K 线标准化。"""
+    return normalize_bar(row)
+
+
+def get_daily_basic_by_trade_date(trade_date: date) -> dict[str, dict[str, Any]]:
+    """
+    指定交易日的全市场日级指标，键为 ts_code。
+    total_mv / circ_mv 若返回为万元，调用方可按需要换算。
+    """
+    pro = _get_pro()
+    last_err: Exception | None = None
+    for attempt in range(MAX_RETRIES):
+        try:
+            df = pro.daily_basic(
+                trade_date=trade_date.strftime("%Y%m%d"),
+                fields="ts_code,trade_date,turnover_rate,volume_ratio,pe,pe_ttm,pb,ps,dv_ratio,dv_ttm,total_mv,circ_mv",
+            )
+            rows = _df_to_records(df)
+            return {str(r["ts_code"]): r for r in rows if r.get("ts_code")}
+        except Exception as e:
+            last_err = e
+            logger.warning("Tushare daily_basic 失败 attempt=%s error=%s", attempt + 1, e)
+            if attempt < MAX_RETRIES - 1:
+                time.sleep(RETRY_INTERVAL_SEC)
+    raise TushareClientError(f"Tushare daily_basic 失败: {last_err}") from last_err
+
+
+def get_weekly_bars(ts_code: str, *, start: str | None = None, end: str | None = None) -> list[dict[str, Any]]:
+    """获取单只股票的历史周线。"""
+    pro = _get_pro()
+    last_err: Exception | None = None
+    for attempt in range(MAX_RETRIES):
+        try:
+            if RATE_PAUSE_SEC > 0:
+                time.sleep(RATE_PAUSE_SEC)
+            df = pro.weekly(
+                ts_code=ts_code,
+                start_date=start or "20000101",
+                end_date=end or "20991231",
+            )
+            return _df_to_records(df)
+        except Exception as e:
+            last_err = e
+            logger.warning("Tushare weekly 失败 attempt=%s code=%s error=%s", attempt + 1, ts_code, e)
+            if attempt < MAX_RETRIES - 1:
+                time.sleep(RETRY_INTERVAL_SEC)
+    raise TushareClientError(f"Tushare weekly 失败: {last_err}") from last_err
+
+
+def get_stk_weekly_monthly_by_trade_date(trade_date: date, freq: str) -> list[dict[str, Any]]:
+    """
+    全市场周/月线（stk_weekly_monthly），按交易日期一次拉取，单次最多约 6000 行。
+    官方文档：trade_date 为每周或每月最后一个交易日；freq 为 week 或 month。
+    需较高积分，详见 Tushare 文档 doc_id=336。
+    """
+    freq = freq.strip().lower()
+    if freq not in ("week", "month"):
+        raise TushareClientError(f"stk_weekly_monthly freq 必须为 week 或 month，收到: {freq}")
+    pro = _get_pro()
+    last_err: Exception | None = None
+    for attempt in range(MAX_RETRIES):
+        try:
+            if RATE_PAUSE_SEC > 0:
+                time.sleep(RATE_PAUSE_SEC)
+            df = pro.stk_weekly_monthly(trade_date=trade_date.strftime("%Y%m%d"), freq=freq)
+            rows = _df_to_records(df)
+            if len(rows) >= 6000:
+                logger.warning(
+                    "%s stk_weekly_monthly 返回行数=%s，接近或达到单次上限 6000，可能不完整",
+                    TUSHARE_CLIENT_ALERT,
+                    len(rows),
+                )
+            return rows
+        except Exception as e:
+            last_err = e
+            logger.warning(
+                "Tushare stk_weekly_monthly 失败 attempt=%s trade_date=%s freq=%s error=%s",
+                attempt + 1,
+                trade_date,
+                freq,
+                e,
+            )
+            if attempt < MAX_RETRIES - 1:
+                time.sleep(RETRY_INTERVAL_SEC)
+    raise TushareClientError(f"Tushare stk_weekly_monthly 失败: {last_err}") from last_err
+
+
+def get_monthly_bars(ts_code: str, *, start: str | None = None, end: str | None = None) -> list[dict[str, Any]]:
+    """获取单只股票的历史月线。"""
+    pro = _get_pro()
+    last_err: Exception | None = None
+    for attempt in range(MAX_RETRIES):
+        try:
+            if RATE_PAUSE_SEC > 0:
+                time.sleep(RATE_PAUSE_SEC)
+            df = pro.monthly(
+                ts_code=ts_code,
+                start_date=start or "20000101",
+                end_date=end or "20991231",
+            )
+            return _df_to_records(df)
+        except Exception as e:
+            last_err = e
+            logger.warning("Tushare monthly 失败 attempt=%s code=%s error=%s", attempt + 1, ts_code, e)
+            if attempt < MAX_RETRIES - 1:
+                time.sleep(RETRY_INTERVAL_SEC)
+    raise TushareClientError(f"Tushare monthly 失败: {last_err}") from last_err
+
+
 def get_fin_income(
     ts_code: str,
     *,
@@ -212,3 +322,58 @@ def get_fin_income(
             if attempt < MAX_RETRIES - 1:
                 time.sleep(RETRY_INTERVAL_SEC)
     raise TushareClientError(f"Tushare income 失败: {last_err}") from last_err
+
+
+def get_open_trade_dates(*, start: str, end: str, exchange: str = "SSE") -> list[date]:
+    """返回指定区间内的开市日期列表。"""
+    pro = _get_pro()
+    last_err: Exception | None = None
+    for attempt in range(MAX_RETRIES):
+        try:
+            df = pro.trade_cal(
+                exchange=exchange,
+                start_date=start,
+                end_date=end,
+                fields="cal_date,is_open",
+            )
+            rows = _df_to_records(df)
+            out: list[date] = []
+            for row in rows:
+                if str(row.get("is_open") or "0") != "1":
+                    continue
+                cal_date = row.get("cal_date")
+                if cal_date:
+                    out_date = _safe_trade_date(str(cal_date))
+                    if out_date:
+                        out.append(out_date)
+            out.sort()
+            return out
+        except Exception as e:
+            last_err = e
+            logger.warning("Tushare trade_cal 失败 attempt=%s error=%s", attempt + 1, e)
+            if attempt < MAX_RETRIES - 1:
+                time.sleep(RETRY_INTERVAL_SEC)
+    raise TushareClientError(f"Tushare trade_cal 失败: {last_err}") from last_err
+
+
+def get_latest_open_trade_date(ref_date: date) -> date | None:
+    """返回不晚于 ref_date 的最近一个开市日。"""
+    start = date(ref_date.year, 1, 1)
+    open_dates = get_open_trade_dates(start=start.strftime("%Y%m%d"), end=ref_date.strftime("%Y%m%d"))
+    if not open_dates:
+        return None
+    return open_dates[-1]
+
+
+def _safe_trade_date(text: str) -> date | None:
+    text = text.strip()
+    if not text:
+        return None
+    for fmt in ("%Y%m%d", "%Y-%m-%d"):
+        try:
+            return date.fromisoformat(text) if fmt == "%Y-%m-%d" else date(
+                int(text[0:4]), int(text[4:6]), int(text[6:8])
+            )
+        except Exception:
+            continue
+    return None
