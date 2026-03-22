@@ -2,49 +2,59 @@
   <div class="stock-screening">
     <el-card shadow="never">
       <template #header>
-        <span>综合选股</span>
-        <span v-if="dataDate" class="data-date">数据日期：{{ dataDateLabel }}</span>
-        <el-popover placement="bottom-start" :width="460" trigger="click">
-          <template #reference>
-            <el-link type="primary" class="capability-link">查看当前产品能力</el-link>
-          </template>
-          <div class="capability-content">
-            <p><strong>当前能力范围</strong></p>
-            <p>1) 每日收盘后同步 A 股全市场列表，并补齐当日价格信息。</p>
-            <p>2) 价格字段：开盘/最高/最低/收盘/昨收、涨跌额、涨跌幅、成交量、成交额、振幅。</p>
-            <p>3) 基本面字段：利润表口径（营业收入、净利润、EPS、毛利率）。</p>
-            <p>4) 本期不提供 ROE；个别股票在停牌或上游缺字段时会显示为空。</p>
+        <div class="card-header-row">
+          <div class="card-header-left">
+            <span>综合选股</span>
+            <span v-if="dataDate" class="data-date">数据日期：{{ dataDateLabel }}</span>
+            <el-popover placement="bottom-start" :width="480" trigger="click">
+              <template #reference>
+                <el-link type="primary" class="capability-link">查看当前产品能力</el-link>
+              </template>
+              <div class="capability-content">
+                <p><strong>当前能力范围</strong></p>
+                <p>1) 右上角可切换日K / 周K / 月K；默认日K。各周期均线与 MACD 均基于该周期收盘序列落库。</p>
+                <p>2) 筛选含：代码、名称、多头排列、MACD 红柱、MA5 上穿 MA10、MACD 金叉（DIF 上穿 DEA）。金叉均指<strong>当前这根 K 线相对紧邻上一根同周期 K</strong>刚发生上穿；无上一根或指标为空时「是」不成立。</p>
+                <p>3) 周K/月K 行上无日级估值（PE 等）与昨收、振幅等列时显示为「-」；财报仍为不晚于周期结束日的最近一期。</p>
+              </div>
+            </el-popover>
           </div>
-        </el-popover>
+          <el-radio-group v-model="timeframe" size="small" class="timeframe-switch" @change="onTimeframeChange">
+            <el-radio-button label="daily">日K</el-radio-button>
+            <el-radio-button label="weekly">周K</el-radio-button>
+            <el-radio-button label="monthly">月K</el-radio-button>
+          </el-radio-group>
+        </div>
       </template>
       <el-form :inline="true" class="filters" @submit.prevent="handleSearch">
-        <el-form-item label="代码">
-          <el-input v-model="filters.code" placeholder="股票代码" clearable style="width: 120px" />
+        <el-form-item label="股票代码">
+          <el-input v-model="filters.code" placeholder="模糊匹配" clearable style="width: 140px" />
         </el-form-item>
-        <el-form-item label="涨跌幅%">
-          <el-input-number v-model="filters.pct_min" :precision="2" placeholder="最小" controls-position="right" style="width: 100px" />
-          <span class="sep">-</span>
-          <el-input-number v-model="filters.pct_max" :precision="2" placeholder="最大" controls-position="right" style="width: 100px" />
+        <el-form-item label="股票名称">
+          <el-input v-model="filters.name" placeholder="模糊匹配" clearable style="width: 140px" />
         </el-form-item>
-        <el-form-item label="股价">
-          <el-input-number v-model="filters.price_min" :precision="2" placeholder="最小" controls-position="right" style="width: 100px" />
-          <span class="sep">-</span>
-          <el-input-number v-model="filters.price_max" :precision="2" placeholder="最大" controls-position="right" style="width: 100px" />
+        <el-form-item label="均线多头排列">
+          <el-select v-model="filters.ma_bull" clearable placeholder="不限" style="width: 100px">
+            <el-option label="是" :value="true" />
+            <el-option label="否" :value="false" />
+          </el-select>
         </el-form-item>
-        <el-form-item label="毛利率%">
-          <el-input-number v-model="filters.gpm_min" :precision="2" placeholder="最小" controls-position="right" style="width: 100px" />
-          <span class="sep">-</span>
-          <el-input-number v-model="filters.gpm_max" :precision="2" placeholder="最大" controls-position="right" style="width: 100px" />
+        <el-form-item label="MACD红柱">
+          <el-select v-model="filters.macd_red" clearable placeholder="不限" style="width: 100px">
+            <el-option label="是" :value="true" />
+            <el-option label="否" :value="false" />
+          </el-select>
         </el-form-item>
-        <el-form-item label="营收(元)">
-          <el-input-number v-model="filters.revenue_min" :precision="2" placeholder="最小" controls-position="right" style="width: 130px" />
-          <span class="sep">-</span>
-          <el-input-number v-model="filters.revenue_max" :precision="2" placeholder="最大" controls-position="right" style="width: 130px" />
+        <el-form-item label="MA5上穿MA10">
+          <el-select v-model="filters.ma_cross" clearable placeholder="不限" style="width: 100px">
+            <el-option label="是" :value="true" />
+            <el-option label="否" :value="false" />
+          </el-select>
         </el-form-item>
-        <el-form-item label="净利润(元)">
-          <el-input-number v-model="filters.net_profit_min" :precision="2" placeholder="最小" controls-position="right" style="width: 130px" />
-          <span class="sep">-</span>
-          <el-input-number v-model="filters.net_profit_max" :precision="2" placeholder="最大" controls-position="right" style="width: 130px" />
+        <el-form-item label="MACD金叉">
+          <el-select v-model="filters.macd_cross" clearable placeholder="不限" style="width: 100px">
+            <el-option label="是" :value="true" />
+            <el-option label="否" :value="false" />
+          </el-select>
         </el-form-item>
         <el-form-item>
           <el-button type="primary" @click="handleSearch">筛选</el-button>
@@ -60,7 +70,7 @@
       >
         <el-table-column prop="code" label="代码" width="110" />
         <el-table-column prop="name" label="名称" width="100" />
-        <el-table-column prop="trade_date" label="日期" width="110" />
+        <el-table-column prop="trade_date" :label="dateColumnLabel" width="120" />
         <el-table-column prop="open" label="开盘价" width="90" align="right">
           <template #default="{ row }">{{ formatNum(row.open) }}</template>
         </el-table-column>
@@ -82,6 +92,27 @@
         <el-table-column prop="pct_change" label="涨跌幅%" width="100" align="right">
           <template #default="{ row }">{{ formatNum(row.pct_change) }}</template>
         </el-table-column>
+        <el-table-column prop="ma5" label="MA5" width="92" align="right">
+          <template #default="{ row }">{{ formatNum(row.ma5) }}</template>
+        </el-table-column>
+        <el-table-column prop="ma10" label="MA10" width="92" align="right">
+          <template #default="{ row }">{{ formatNum(row.ma10) }}</template>
+        </el-table-column>
+        <el-table-column prop="ma20" label="MA20" width="92" align="right">
+          <template #default="{ row }">{{ formatNum(row.ma20) }}</template>
+        </el-table-column>
+        <el-table-column prop="ma60" label="MA60" width="92" align="right">
+          <template #default="{ row }">{{ formatNum(row.ma60) }}</template>
+        </el-table-column>
+        <el-table-column prop="macd_dif" label="MACD DIF" width="100" align="right">
+          <template #default="{ row }">{{ formatNum(row.macd_dif) }}</template>
+        </el-table-column>
+        <el-table-column prop="macd_dea" label="MACD DEA" width="100" align="right">
+          <template #default="{ row }">{{ formatNum(row.macd_dea) }}</template>
+        </el-table-column>
+        <el-table-column prop="macd_hist" label="MACD柱" width="100" align="right">
+          <template #default="{ row }">{{ formatNum(row.macd_hist) }}</template>
+        </el-table-column>
         <el-table-column prop="amplitude" label="振幅%" width="90" align="right">
           <template #default="{ row }">{{ formatNum(row.amplitude) }}</template>
         </el-table-column>
@@ -90,6 +121,18 @@
         </el-table-column>
         <el-table-column prop="amount" label="成交额" width="100" align="right">
           <template #default="{ row }">{{ formatNum(row.amount) }}</template>
+        </el-table-column>
+        <el-table-column prop="pe" label="PE" width="90" align="right">
+          <template #default="{ row }">{{ formatNum(row.pe) }}</template>
+        </el-table-column>
+        <el-table-column prop="pe_ttm" label="PE TTM" width="100" align="right">
+          <template #default="{ row }">{{ formatNum(row.pe_ttm) }}</template>
+        </el-table-column>
+        <el-table-column prop="pb" label="PB" width="90" align="right">
+          <template #default="{ row }">{{ formatNum(row.pb) }}</template>
+        </el-table-column>
+        <el-table-column prop="dv_ratio" label="股息率%" width="100" align="right">
+          <template #default="{ row }">{{ formatNum(row.dv_ratio) }}</template>
         </el-table-column>
         <el-table-column prop="report_date" label="财报期" width="110" />
         <el-table-column prop="revenue" label="营业收入" width="120" align="right">
@@ -123,9 +166,10 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref, computed } from 'vue'
 import { ElMessage } from 'element-plus'
-import { getScreening, getLatestDate, type ScreeningItem } from '@/api/stock'
+import { getScreening, getLatestDate, type ScreeningItem, type ScreeningTimeframe } from '@/api/stock'
 
 const loading = ref(false)
+const timeframe = ref<ScreeningTimeframe>('daily')
 const items = ref<ScreeningItem[]>([])
 const total = ref(0)
 const page = ref(1)
@@ -134,16 +178,11 @@ const dataDate = ref<string | null>(null)
 
 const filters = reactive({
   code: '',
-  pct_min: undefined as number | undefined,
-  pct_max: undefined as number | undefined,
-  price_min: undefined as number | undefined,
-  price_max: undefined as number | undefined,
-  gpm_min: undefined as number | undefined,
-  gpm_max: undefined as number | undefined,
-  revenue_min: undefined as number | undefined,
-  revenue_max: undefined as number | undefined,
-  net_profit_min: undefined as number | undefined,
-  net_profit_max: undefined as number | undefined,
+  name: '',
+  ma_bull: undefined as boolean | undefined,
+  macd_red: undefined as boolean | undefined,
+  ma_cross: undefined as boolean | undefined,
+  macd_cross: undefined as boolean | undefined,
 })
 
 const dataDateLabel = computed(() => {
@@ -153,6 +192,12 @@ const dataDateLabel = computed(() => {
   const yesterday = new Date(Date.now() - 864e5).toISOString().slice(0, 10)
   if (dataDate.value === yesterday) return '昨天'
   return dataDate.value
+})
+
+const dateColumnLabel = computed(() => {
+  if (timeframe.value === 'weekly') return '周结束日'
+  if (timeframe.value === 'monthly') return '月结束日'
+  return '交易日'
 })
 
 function formatNum(v: number | string | null | undefined): string {
@@ -166,18 +211,14 @@ function buildParams() {
   const p: Record<string, unknown> = {
     page: page.value,
     page_size: pageSize.value,
+    timeframe: timeframe.value,
   }
   if (filters.code) p.code = filters.code
-  if (filters.pct_min != null) p.pct_min = filters.pct_min
-  if (filters.pct_max != null) p.pct_max = filters.pct_max
-  if (filters.price_min != null) p.price_min = filters.price_min
-  if (filters.price_max != null) p.price_max = filters.price_max
-  if (filters.gpm_min != null) p.gpm_min = filters.gpm_min
-  if (filters.gpm_max != null) p.gpm_max = filters.gpm_max
-  if (filters.revenue_min != null) p.revenue_min = filters.revenue_min
-  if (filters.revenue_max != null) p.revenue_max = filters.revenue_max
-  if (filters.net_profit_min != null) p.net_profit_min = filters.net_profit_min
-  if (filters.net_profit_max != null) p.net_profit_max = filters.net_profit_max
+  if (filters.name) p.name = filters.name
+  if (filters.ma_bull === true || filters.ma_bull === false) p.ma_bull = filters.ma_bull
+  if (filters.macd_red === true || filters.macd_red === false) p.macd_red = filters.macd_red
+  if (filters.ma_cross === true || filters.ma_cross === false) p.ma_cross = filters.ma_cross
+  if (filters.macd_cross === true || filters.macd_cross === false) p.macd_cross = filters.macd_cross
   return p
 }
 
@@ -200,11 +241,17 @@ async function fetchList() {
 
 async function fetchLatestDate() {
   try {
-    const res = await getLatestDate()
+    const res = await getLatestDate({ timeframe: timeframe.value })
     if (res.data.date) dataDate.value = res.data.date
   } catch {
     // 可选，不阻塞列表
   }
+}
+
+async function onTimeframeChange() {
+  page.value = 1
+  await fetchLatestDate()
+  await fetchList()
 }
 
 function handleSearch() {
@@ -214,11 +261,11 @@ function handleSearch() {
 
 function handleReset() {
   filters.code = ''
-  filters.pct_min = filters.pct_max = undefined
-  filters.price_min = filters.price_max = undefined
-  filters.gpm_min = filters.gpm_max = undefined
-  filters.revenue_min = filters.revenue_max = undefined
-  filters.net_profit_min = filters.net_profit_max = undefined
+  filters.name = ''
+  filters.ma_bull = undefined
+  filters.macd_red = undefined
+  filters.ma_cross = undefined
+  filters.macd_cross = undefined
   page.value = 1
   fetchList()
 }
@@ -232,6 +279,22 @@ onMounted(() => {
 <style scoped>
 .stock-screening {
   min-height: 400px;
+}
+.card-header-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.card-header-left {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.timeframe-switch {
+  flex-shrink: 0;
 }
 .data-date {
   margin-left: 16px;
@@ -248,10 +311,6 @@ onMounted(() => {
 }
 .filters {
   margin-bottom: 16px;
-}
-.sep {
-  margin: 0 4px;
-  color: #909399;
 }
 .pagination {
   margin-top: 16px;

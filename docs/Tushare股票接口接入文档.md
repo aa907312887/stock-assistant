@@ -75,14 +75,47 @@ print(tushare.__version__)
 | 项目 | 说明 |
 |------|------|
 | **接口 API** | `pro.daily(...)`，对应官方 **A 股日线行情** 接口。参考：[daily](https://tushare.pro/document/2?doc_id=27)。 |
-| **功能简介** | 按 **自然日** 拉取 **全市场** 当日（或指定交易日）日线，用于写入 `stock_daily_quote`、综合选股展示价量与涨跌幅等。 |
+| **功能简介** | 按 **交易日** 拉取 **全市场** 日线，用于写入 `stock_daily_bar` 的价量字段。 |
 | **入参（本项目实际传入）** | `trade_date`：字符串 `YYYYMMDD`（由 `date` 格式化为 `%Y%m%d`）。未传 `ts_code`，表示全市场。 |
-| **出参（本项目使用）** | 转为 `dict`，键为 `ts_code`；行内使用字段包括 `open`、`high`、`low`、`close`、`pre_close`、`vol`、`amount`、`pct_chg`、`change` 等，经 `normalize_daily_bar` 转为内部单位（成交额元、成交量股）。 |
+| **出参（本项目使用）** | 转为 `dict`，键为 `ts_code`；行内使用字段包括 `open`、`high`、`low`、`close`、`pre_close`、`vol`、`amount`、`pct_chg`、`change` 等，经 `normalize_bar` 转为内部单位（成交额元、成交量股）。 |
 | **返回数据简短示例** | 原始行示例（字段名以接口为准）：<br>`{"ts_code": "000001.SZ", "trade_date": "20260320", "open": 10.5, "high": 10.8, "low": 10.4, "close": 10.6, "pre_close": 10.5, "vol": 123456.0, "amount": 98765.0, "pct_chg": 0.95, "change": 0.1}` |
 
 ---
 
-### 3. `income` — 利润表（上市公司财务）
+### 3. `daily_basic` — 日级估值指标
+
+| 项目 | 说明 |
+|------|------|
+| **接口 API** | `pro.daily_basic(...)`，对应官方 **每日指标** 接口。参考：[daily_basic](https://tushare.pro/document/2?doc_id=32)。 |
+| **功能简介** | 按交易日拉取全市场换手率、量比、市值、PE、PB、股息率等指标，与 `daily` 合并后写入 `stock_daily_bar`。 |
+| **入参（本项目实际传入）** | `trade_date=YYYYMMDD`，`fields="ts_code,trade_date,turnover_rate,volume_ratio,pe,pe_ttm,pb,ps,dv_ratio,dv_ttm,total_mv,circ_mv"`。 |
+| **出参（本项目使用）** | 转为 `dict`，键为 `ts_code`；行内使用 `turnover_rate`、`volume_ratio`、`pe`、`pe_ttm`、`pb`、`ps`、`dv_ratio`、`dv_ttm`、`total_mv`、`circ_mv`。 |
+
+---
+
+### 4. `weekly` / `monthly` — 周线与月线
+
+| 项目 | 说明 |
+|------|------|
+| **接口 API** | `pro.weekly(...)`、`pro.monthly(...)`，对应官方周线/月线接口。 |
+| **功能简介** | 按股票代码拉取历史周线和月线，分别写入 `stock_weekly_bar`、`stock_monthly_bar`。 |
+| **入参（本项目实际传入）** | `ts_code` 必填；`start_date`、`end_date` 为 `YYYYMMDD`。 |
+| **出参（本项目使用）** | 使用字段与 `daily` 接近，复用 `normalize_bar` 处理 OHLC、涨跌幅、成交量额。 |
+
+---
+
+### 5. `trade_cal` — 交易日历
+
+| 项目 | 说明 |
+|------|------|
+| **接口 API** | `pro.trade_cal(...)`，对应官方交易日历接口。 |
+| **功能简介** | 用于判断最近开市日，以及回灌时枚举区间内所有开市日。 |
+| **入参（本项目实际传入）** | `exchange="SSE"`、`start_date=YYYYMMDD`、`end_date=YYYYMMDD`。 |
+| **出参（本项目使用）** | 读取 `cal_date`、`is_open`，筛选开市日并转为 `date` 列表。 |
+
+---
+
+### 6. `income` — 利润表（上市公司财务）
 
 | 项目 | 说明 |
 |------|------|

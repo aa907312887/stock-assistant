@@ -13,10 +13,21 @@ export interface ScreeningItem {
   prev_close: number | null
   change_amount: number | null
   pct_change: number | null
+  ma5: number | null
+  ma10: number | null
+  ma20: number | null
+  ma60: number | null
+  macd_dif: number | null
+  macd_dea: number | null
+  macd_hist: number | null
   volume: number | null
   amount: number | null
   amplitude: number | null
   turnover_rate: number | null
+  pe: number | null
+  pe_ttm: number | null
+  pb: number | null
+  dv_ratio: number | null
   report_date: string | null
   revenue: number | null
   net_profit: number | null
@@ -25,37 +36,42 @@ export interface ScreeningItem {
   updated_at: string | null
 }
 
+export type ScreeningTimeframe = 'daily' | 'weekly' | 'monthly'
+
 export interface ScreeningResponse {
   items: ScreeningItem[]
   total: number
   page: number
   page_size: number
+  timeframe: ScreeningTimeframe
   data_date: string | null
 }
 
 export interface LatestDateResponse {
   date: string | null
+  timeframe: ScreeningTimeframe
 }
 
 export function getScreening(params: {
   page?: number
   page_size?: number
   code?: string
-  pct_min?: number
-  pct_max?: number
-  price_min?: number
-  price_max?: number
-  gpm_min?: number
-  gpm_max?: number
-  revenue_min?: number
-  revenue_max?: number
-  net_profit_min?: number
-  net_profit_max?: number
+  name?: string
+  /** 是否均线多头排列 */
+  ma_bull?: boolean
+  /** 是否 MACD 红柱（柱>0） */
+  macd_red?: boolean
+  /** 是否 MA5 上穿 MA10（相对上一根同周期 K） */
+  ma_cross?: boolean
+  /** 是否 MACD 金叉（DIF 上穿 DEA） */
+  macd_cross?: boolean
+  /** 日K / 周K / 月K，默认 daily */
+  timeframe?: ScreeningTimeframe
   data_date?: string
 }) {
   return http.get<ScreeningResponse>('/stock/screening', { params })
 }
 
-export function getLatestDate() {
-  return http.get<LatestDateResponse>('/stock/screening/latest-date')
+export function getLatestDate(params?: { timeframe?: ScreeningTimeframe }) {
+  return http.get<LatestDateResponse>('/stock/screening/latest-date', { params })
 }
