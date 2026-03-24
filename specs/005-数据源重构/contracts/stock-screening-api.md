@@ -85,12 +85,14 @@
 - `total=0`
 - 若已存在历史数据，仍返回 `data_date`
 
-## 2. 最新 K 线日期（按周期）
+## 2. 最新日期（按周期）
 
 - **路径**: `GET /api/stock/screening/latest-date`
 - **鉴权**: 需要登录态
 - **Query**: `timeframe` — `daily` | `weekly` | `monthly`（默认 `daily`）
-- **说明**: 返回对应 bar 表最大日期列（日/周/月）
+- **说明**:
+  - `daily`：返回 `stock_daily_bar.trade_date` 最大值（交易日口径）
+  - `weekly/monthly`：返回对应表 `updated_at` 的最大自然日（快照口径，用于判断“今天是否已更新”）
 
 ### 成功响应
 
@@ -103,7 +105,7 @@
 
 ## 3. 契约约定
 
-- 本接口返回的“最新数据”仅指**最新历史日线日期**，不表示实时行情。
+- 本接口返回的“最新日期”用于页面展示同步新鲜度；周/月为快照日期，不等价于周/月周期结束日。
 - `price` 与 `close` 保持一致，方便兼容现有前端展示逻辑。
 - 财报字段取 `stock_financial_report` 中不晚于 `data_date` 的最近报告期记录。
 - 均线与 MACD 展示字段来自 `stock_daily_bar`；筛选条件以服务端上述布尔/模糊逻辑为准；指标未落库时列表中可能为 `null`。

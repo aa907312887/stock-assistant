@@ -20,6 +20,11 @@ const router = createRouter({
         { path: 'stock-basic', name: 'stock-basic', component: () => import('@/views/StockBasicView.vue') },
         { path: 'sync-jobs', name: 'sync-jobs', component: () => import('@/views/SyncJobMonitorView.vue') },
         { path: 'sync-tasks', name: 'sync-tasks', component: () => import('@/views/SyncTaskListView.vue') },
+        {
+          path: 'personal-holdings',
+          name: 'personal-holdings',
+          component: () => import('@/views/PersonalHoldingsView.vue'),
+        },
       ],
     },
     { path: '/:pathMatch(.*)*', redirect: '/' },

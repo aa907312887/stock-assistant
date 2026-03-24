@@ -19,6 +19,7 @@ from app.schemas.stock_indicators import (
     TriggerStockIndicatorsResponse,
 )
 from app.schemas.sync_job import (
+    RetryTradeDateSyncRequest,
     SyncJobDetailResponse,
     SyncJobItem,
     SyncJobListResponse,
@@ -168,6 +169,35 @@ async def trigger_stock_sync(
             batch_id=batch_id,
             mode=payload.mode,
             message="同步任务已触发",
+        ).model_dump(),
+    )
+
+
+@router.post("/sync-jobs/retry-date")
+async def retry_sync_for_trade_date(
+    payload: RetryTradeDateSyncRequest = Body(...),
+    current_user: User = Depends(get_current_user),
+):
+    """补偿重试：指定交易日手动触发一次增量同步。"""
+    _check_sync_monitor_viewer(current_user)
+    batch_id = f"stock-retry-{payload.trade_date.strftime('%Y%m%d')}-{datetime.now().strftime('%H%M%S')}"
+
+    def _runner() -> None:
+        run_sync_once_now(
+            batch_id=batch_id,
+            mode="incremental",
+            modules=payload.modules,
+            requested_trade_date=payload.trade_date,
+        )
+
+    threading.Thread(target=_runner, daemon=True).start()
+    return JSONResponse(
+        status_code=status.HTTP_202_ACCEPTED,
+        content=TriggerSyncResponse(
+            status="started",
+            batch_id=batch_id,
+            mode="incremental",
+            message=f"已触发 {payload.trade_date} 的补偿同步",
         ).model_dump(),
     )
 

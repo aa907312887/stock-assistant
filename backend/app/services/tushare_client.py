@@ -2,7 +2,7 @@
 import json
 import logging
 import time
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 from threading import Lock
 from typing import Any
@@ -270,6 +270,86 @@ def get_stk_weekly_monthly_by_trade_date(trade_date: date, freq: str) -> list[di
             if attempt < MAX_RETRIES - 1:
                 time.sleep(RETRY_INTERVAL_SEC)
     raise TushareClientError(f"Tushare stk_weekly_monthly 失败: {last_err}") from last_err
+
+
+def get_stk_weekly_monthly_latest_by_anchor(anchor_date: date, freq: str) -> list[dict[str, Any]]:
+    """
+    基于锚点日期获取全市场周/月 K 最新快照（每日可用）：
+    1) 先按 trade_date=anchor_date 直查；
+    2) 若为空，再按日期区间回退查询，并按 ts_code 保留 <=anchor_date 的最新一条。
+
+    说明：官方文档中 trade_date 口径存在「周/月最后日期」限制，实盘中某些日期会返回空；
+    为保证每日增量可补偿，统一在客户端做回退兜底。
+    """
+    freq = freq.strip().lower()
+    if freq not in ("week", "month"):
+        raise TushareClientError(f"stk_weekly_monthly freq 必须为 week 或 month，收到: {freq}")
+    rows = get_stk_weekly_monthly_by_trade_date(anchor_date, freq)
+    if rows:
+        return rows
+
+    pro = _get_pro()
+    if freq == "week":
+        start_date = anchor_date - timedelta(days=14)
+    else:
+        # 月线按当月起始回退；若当月为空再扩展到近 62 天兜底
+        start_date = date(anchor_date.year, anchor_date.month, 1)
+    end_date = anchor_date
+
+    def _query_range(start_d: date, end_d: date) -> list[dict[str, Any]]:
+        last_err: Exception | None = None
+        for attempt in range(MAX_RETRIES):
+            try:
+                if RATE_PAUSE_SEC > 0:
+                    time.sleep(RATE_PAUSE_SEC)
+                df = pro.stk_weekly_monthly(
+                    start_date=start_d.strftime("%Y%m%d"),
+                    end_date=end_d.strftime("%Y%m%d"),
+                    freq=freq,
+                )
+                return _df_to_records(df)
+            except Exception as e:
+                last_err = e
+                logger.warning(
+                    "Tushare stk_weekly_monthly 区间查询失败 attempt=%s start=%s end=%s freq=%s error=%s",
+                    attempt + 1,
+                    start_d,
+                    end_d,
+                    freq,
+                    e,
+                )
+                if attempt < MAX_RETRIES - 1:
+                    time.sleep(RETRY_INTERVAL_SEC)
+        raise TushareClientError(f"Tushare stk_weekly_monthly 区间查询失败: {last_err}") from last_err
+
+    range_rows = _query_range(start_date, end_date)
+    if not range_rows and freq == "month":
+        range_rows = _query_range(anchor_date - timedelta(days=62), end_date)
+    latest_rows = _pick_latest_rows_by_code(range_rows, anchor_date)
+    logger.info(
+        "stk_weekly_monthly 回退查询 anchor=%s freq=%s raw_rows=%s latest_rows=%s",
+        anchor_date,
+        freq,
+        len(range_rows),
+        len(latest_rows),
+    )
+    return latest_rows
+
+
+def _pick_latest_rows_by_code(rows: list[dict[str, Any]], anchor_date: date) -> list[dict[str, Any]]:
+    """按 ts_code 选取不晚于 anchor_date 的最新一条。"""
+    latest: dict[str, tuple[date, dict[str, Any]]] = {}
+    for row in rows:
+        code = str(row.get("ts_code") or "").strip()
+        if not code:
+            continue
+        d = _safe_trade_date(str(row.get("end_date") or row.get("trade_date") or ""))
+        if d is None or d > anchor_date:
+            continue
+        cur = latest.get(code)
+        if cur is None or d >= cur[0]:
+            latest[code] = (d, row)
+    return [v[1] for v in latest.values()]
 
 
 def get_monthly_bars(ts_code: str, *, start: str | None = None, end: str | None = None) -> list[dict[str, Any]]:

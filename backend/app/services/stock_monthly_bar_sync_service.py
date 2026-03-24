@@ -4,13 +4,22 @@ from __future__ import annotations
 
 import logging
 import time
+from decimal import Decimal
 from datetime import date
 
 from sqlalchemy.orm import Session
 
-from app.models import StockMonthlyBar
-from app.services.stock_sync_utils import enumerate_month_batch_trade_dates, safe_date
-from app.services.tushare_client import get_stk_weekly_monthly_by_trade_date, normalize_bar
+from app.models import StockDailyBar, StockMonthlyBar
+from app.services.stock_sync_utils import (
+    enumerate_month_batch_trade_dates,
+    get_month_last_open_date,
+    safe_date,
+)
+from app.services.tushare_client import (
+    get_stk_weekly_monthly_by_trade_date,
+    get_stk_weekly_monthly_latest_by_anchor,
+    normalize_bar,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -53,16 +62,103 @@ def _upsert_monthly_rows(db: Session, rows: list[dict], batch_id: str) -> int:
     return written
 
 
+def _safe_pct(numerator: Decimal | None, denominator: Decimal | None) -> Decimal | None:
+    if numerator is None or denominator in (None, Decimal("0")):
+        return None
+    try:
+        return (numerator / denominator) * Decimal("100")
+    except Exception:
+        return None
+
+
+def _supplement_monthly_from_daily(db: Session, *, anchor_date: date, batch_id: str) -> int:
+    """
+    以日线补充“当月未完结月K”：
+    - trade_month_end 固定写为当月最后开市日
+    - 以 [月初..anchor] 的日线聚合 open/high/low/close/volume/amount
+    """
+    month_end = get_month_last_open_date(anchor_date)
+    if month_end is None:
+        return 0
+    month_start = date(anchor_date.year, anchor_date.month, 1)
+    rows = (
+        db.query(StockDailyBar)
+        .filter(
+            StockDailyBar.trade_date >= month_start,
+            StockDailyBar.trade_date <= anchor_date,
+        )
+        .order_by(StockDailyBar.stock_code.asc(), StockDailyBar.trade_date.asc())
+        .all()
+    )
+    grouped: dict[str, list[StockDailyBar]] = {}
+    for r in rows:
+        grouped.setdefault(r.stock_code, []).append(r)
+    written = 0
+    for code, ds in grouped.items():
+        if not ds:
+            continue
+        first = ds[0]
+        last = ds[-1]
+        high_vals = [x.high for x in ds if x.high is not None]
+        low_vals = [x.low for x in ds if x.low is not None]
+        vol_vals = [x.volume for x in ds if x.volume is not None]
+        amt_vals = [x.amount for x in ds if x.amount is not None]
+        open_v = first.open
+        close_v = last.close
+        prev_close = first.prev_close
+        change_amt = (close_v - prev_close) if close_v is not None and prev_close is not None else None
+        pct_chg = _safe_pct(change_amt, prev_close)
+        existing = (
+            db.query(StockMonthlyBar)
+            .filter(StockMonthlyBar.stock_code == code, StockMonthlyBar.trade_month_end == month_end)
+            .first()
+        )
+        payload = {
+            "open": open_v,
+            "high": max(high_vals) if high_vals else None,
+            "low": min(low_vals) if low_vals else None,
+            "close": close_v,
+            "change_amount": change_amt,
+            "pct_change": pct_chg,
+            "volume": sum(vol_vals, Decimal("0")) if vol_vals else None,
+            "amount": sum(amt_vals, Decimal("0")) if amt_vals else None,
+            "sync_batch_id": batch_id,
+            "data_source": "tushare",
+        }
+        if existing:
+            for k, v in payload.items():
+                setattr(existing, k, v)
+        else:
+            db.add(StockMonthlyBar(stock_code=code, trade_month_end=month_end, **payload))
+        written += 1
+    db.commit()
+    logger.info(
+        "月线日线补充完成 anchor=%s month_end=%s 写入行数=%s",
+        anchor_date,
+        month_end,
+        written,
+    )
+    return written
+
+
 def sync_monthly_bars_batch(db: Session, *, trade_date: date, batch_id: str) -> dict[str, int]:
     """
     按交易日期全市场拉月线（stk_weekly_monthly，freq=month）。
     每个交易日均调用，以支持当月「未完成」月线（与规格 FR-007 补充一致）。
     """
-    rows = get_stk_weekly_monthly_by_trade_date(trade_date, "month")
+    rows = get_stk_weekly_monthly_latest_by_anchor(trade_date, "month")
     written = _upsert_monthly_rows(db, rows, batch_id)
+    supplemented = _supplement_monthly_from_daily(db, anchor_date=trade_date, batch_id=batch_id)
     db.commit()
-    logger.info("月线批量同步完成 trade_date=%s written=%s", trade_date, written)
-    return {"monthly_rows": written}
+    logger.info(
+        "月线批量同步完成 anchor_date=%s rows=%s written=%s 日线补充=%s",
+        trade_date,
+        len(rows),
+        written,
+        supplemented,
+    )
+    rows_for_report = supplemented if supplemented > 0 else written
+    return {"monthly_rows": rows_for_report}
 
 
 def sync_monthly_bars_backfill_batch(

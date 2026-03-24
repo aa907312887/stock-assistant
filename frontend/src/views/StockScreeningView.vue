@@ -5,7 +5,7 @@
         <div class="card-header-row">
           <div class="card-header-left">
             <span>综合选股</span>
-            <span v-if="dataDate" class="data-date">数据日期：{{ dataDateLabel }}</span>
+            <span v-if="dataDate" class="data-date">{{ dataDatePrefix }}：{{ dataDateLabel }}</span>
             <el-popover placement="bottom-start" :width="480" trigger="click">
               <template #reference>
                 <el-link type="primary" class="capability-link">查看当前产品能力</el-link>
@@ -194,6 +194,11 @@ const dataDateLabel = computed(() => {
   return dataDate.value
 })
 
+const dataDatePrefix = computed(() => {
+  if (timeframe.value === 'weekly' || timeframe.value === 'monthly') return '快照日期'
+  return '数据日期'
+})
+
 const dateColumnLabel = computed(() => {
   if (timeframe.value === 'weekly') return '周结束日'
   if (timeframe.value === 'monthly') return '月结束日'
@@ -228,7 +233,6 @@ async function fetchList() {
     const res = await getScreening(buildParams())
     items.value = res.data.items
     total.value = res.data.total
-    if (res.data.data_date) dataDate.value = res.data.data_date
   } catch (e: unknown) {
     const msg = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail || '数据暂时不可用，请稍后重试'
     ElMessage.error(msg)

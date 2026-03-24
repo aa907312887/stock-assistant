@@ -14,6 +14,7 @@ from app.services.stock_daily_bar_sync_service import sync_daily_bars
 from app.services.stock_financial_sync_service import sync_financial_reports
 from app.services.stock_monthly_bar_sync_service import sync_monthly_bars
 from app.services.stock_indicator_fill_service import fill_after_sync
+from app.services.stock_sync_utils import get_month_last_open_date, get_week_last_open_date
 from app.services.stock_weekly_bar_sync_service import sync_weekly_bars
 from app.services.tushare_client import get_latest_open_trade_date, get_open_trade_dates
 
@@ -155,8 +156,9 @@ def run_stock_sync(
             )
             _persist_progress()
             if module_status.get("weekly") == "success":
+                weekly_anchor = get_week_last_open_date(end_date or trade_date) or (end_date or trade_date)
                 _fill_indicators_safe_orchestrator(
-                    db, "weekly", anchor_date=end_date or trade_date, limit=limit
+                    db, "weekly", anchor_date=weekly_anchor, limit=limit
                 )
 
         if "monthly" in modules:
@@ -177,8 +179,9 @@ def run_stock_sync(
             )
             _persist_progress()
             if module_status.get("monthly") == "success":
+                monthly_anchor = get_month_last_open_date(end_date or trade_date) or (end_date or trade_date)
                 _fill_indicators_safe_orchestrator(
-                    db, "monthly", anchor_date=end_date or trade_date, limit=limit
+                    db, "monthly", anchor_date=monthly_anchor, limit=limit
                 )
 
         if "financial" in modules:

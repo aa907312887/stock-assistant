@@ -9,7 +9,7 @@ from app.api.deps import get_current_user
 from app.database import get_db
 from app.models import User
 from app.schemas.stock import LatestDateResponse, ScreeningItem, ScreeningResponse
-from app.services.screening_service import get_latest_bar_date, list_screening
+from app.services.screening_service import get_latest_snapshot_date, list_screening
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/stock", tags=["选股"])
@@ -66,6 +66,6 @@ def get_screening_latest_date(
     timeframe: ScreeningTimeframe = Query("daily", description="日K / 周K / 月K"),
     db=Depends(get_db),
 ):
-    """最新数据日期（各周期 bar 表最大日期列）。需登录。"""
-    d = get_latest_bar_date(db, timeframe)
+    """最新快照日期（周/月按最近更新日）。需登录。"""
+    d = get_latest_snapshot_date(db, timeframe)
     return LatestDateResponse(date=d, timeframe=timeframe)

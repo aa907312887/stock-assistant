@@ -29,6 +29,24 @@ def get_latest_bar_date(db: Session, timeframe: Timeframe = "daily") -> date | N
     return None
 
 
+def get_latest_snapshot_date(db: Session, timeframe: Timeframe = "daily") -> date | None:
+    """
+    返回各周期“最新同步快照日期”（按 updated_at 取最大日期）。
+
+    - daily：沿用交易日口径（trade_date）
+    - weekly/monthly：返回最近一次更新发生的自然日，用于前端展示“今天是否已更新”
+    """
+    if timeframe == "daily":
+        return get_latest_bar_date(db, "daily")
+    if timeframe == "weekly":
+        dt = db.query(func.max(StockWeeklyBar.updated_at)).scalar()
+        return dt.date() if dt else None
+    if timeframe == "monthly":
+        dt = db.query(func.max(StockMonthlyBar.updated_at)).scalar()
+        return dt.date() if dt else None
+    return None
+
+
 def get_latest_trade_date(db: Session) -> date | None:
     """兼容旧调用：等价于 get_latest_bar_date(daily)。"""
     return get_latest_bar_date(db, "daily")

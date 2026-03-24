@@ -12,6 +12,7 @@ from app.api.auth import router as auth_router
 from app.api.stock import router as stock_router
 from app.api.stock_basic import router as stock_basic_router
 from app.api.investment_logic import router as investment_logic_router
+from app.api.portfolio import router as portfolio_router
 from app.core.scheduler import shutdown_scheduler, start_scheduler
 
 # 日志：同时输出到控制台和文件 backend/logs/app.log（文件每次写入后 flush，避免 500 时看不到）
@@ -70,6 +71,7 @@ app.include_router(admin_router, prefix="/api")
 app.include_router(stock_router, prefix="/api")
 app.include_router(stock_basic_router, prefix="/api")
 app.include_router(investment_logic_router, prefix="/api")
+app.include_router(portfolio_router, prefix="/api")
 
 
 @app.exception_handler(Exception)
@@ -95,7 +97,8 @@ async def log_requests(request: Request, call_next):
     _flush_log_handlers()
     try:
         response = await call_next(request)
-        logging.getLogger("uvicorn.access").info(f"{method} {path} -> {response.status_code}")
+        # 使用应用日志记录响应状态，避免触发 uvicorn.access 的专用格式化参数错误
+        logger.info("<<< %s %s -> %s", method, path, response.status_code)
         return response
     except Exception as exc:
         logger.exception("Request failed %s %s: %s", method, path, exc)

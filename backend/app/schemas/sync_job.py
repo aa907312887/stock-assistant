@@ -19,6 +19,13 @@ class TriggerSyncRequest(BaseModel):
         return self
 
 
+class RetryTradeDateSyncRequest(BaseModel):
+    """补偿重试：按指定交易日触发一次增量同步。"""
+
+    trade_date: date
+    modules: list[str] | None = None
+
+
 class TriggerSyncResponse(BaseModel):
     status: str = "started"
     batch_id: str

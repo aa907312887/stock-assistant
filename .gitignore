@@ -8,6 +8,8 @@
 
 # backend
 backend/.venv/
+backend/uploads/portfolio/**
+!backend/uploads/portfolio/.gitkeep
 backend/logs/
 *.log
 backend/__pycache__/

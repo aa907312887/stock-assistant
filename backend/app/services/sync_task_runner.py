@@ -14,6 +14,7 @@ from app.services.stock_daily_bar_sync_service import sync_daily_bars
 from app.services.stock_monthly_bar_sync_service import sync_monthly_bars_batch
 from app.services.stock_weekly_bar_sync_service import sync_weekly_bars_batch
 from app.services.stock_indicator_fill_service import fill_after_sync
+from app.services.stock_sync_utils import get_month_last_open_date, get_week_last_open_date
 from app.services.stock_sync_orchestrator import _build_error_message
 
 logger = logging.getLogger(__name__)
@@ -219,11 +220,13 @@ def _run_module_by_type(
         return out
     if task_type == "weekly":
         out = sync_weekly_bars_batch(db, trade_date=trade_date, batch_id=batch_id)
-        _fill_indicators_safe(db, "weekly", anchor_date=trade_date, limit=limit)
+        weekly_anchor = get_week_last_open_date(trade_date) or trade_date
+        _fill_indicators_safe(db, "weekly", anchor_date=weekly_anchor, limit=limit)
         return out
     if task_type == "monthly":
         out = sync_monthly_bars_batch(db, trade_date=trade_date, batch_id=batch_id)
-        _fill_indicators_safe(db, "monthly", anchor_date=trade_date, limit=limit)
+        monthly_anchor = get_month_last_open_date(trade_date) or trade_date
+        _fill_indicators_safe(db, "monthly", anchor_date=monthly_anchor, limit=limit)
         return out
     raise ValueError(f"未知任务类型: {task_type}")
 

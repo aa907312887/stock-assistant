@@ -29,6 +29,13 @@ export interface SyncJobDetailResponse extends SyncJobItem {
   extra_json: Record<string, unknown> | null
 }
 
+export interface TriggerSyncResponse {
+  status: string
+  batch_id: string
+  mode: string
+  message: string
+}
+
 export function getSyncJobs(params: {
   page?: number
   page_size?: number
@@ -41,6 +48,10 @@ export function getSyncJobs(params: {
 
 export function getSyncJobDetail(batchId: string) {
   return http.get<SyncJobDetailResponse>(`/admin/sync-jobs/${batchId}`)
+}
+
+export function retrySyncByTradeDate(payload: { trade_date: string; modules?: string[] }) {
+  return http.post<TriggerSyncResponse>('/admin/sync-jobs/retry-date', payload)
 }
 
 export interface SyncTaskItem {

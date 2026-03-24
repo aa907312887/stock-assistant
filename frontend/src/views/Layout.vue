@@ -11,7 +11,7 @@
       <el-aside width="200px" class="aside">
         <el-menu
           :default-active="activeMenu"
-          :default-openeds="['stock-info']"
+          :default-openeds="['stock-info', 'personal-services']"
           router
           class="menu"
         >
@@ -22,6 +22,10 @@
             <el-menu-item index="/stock-basic">股票基本信息</el-menu-item>
             <el-menu-item index="/sync-jobs">同步批次</el-menu-item>
             <el-menu-item index="/sync-tasks">同步子任务</el-menu-item>
+          </el-sub-menu>
+          <el-sub-menu index="personal-services">
+            <template #title>个人服务</template>
+            <el-menu-item index="/personal-holdings">个人持仓</el-menu-item>
           </el-sub-menu>
         </el-menu>
       </el-aside>

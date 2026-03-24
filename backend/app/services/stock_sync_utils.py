@@ -94,3 +94,21 @@ def enumerate_month_batch_trade_dates(start: date, end: date) -> list[date]:
         else:
             m += 1
     return out
+
+
+def get_week_last_open_date(anchor_date: date) -> date | None:
+    """返回 anchor 所在自然周（周一至周日）的最后一个开市日。"""
+    week_start = anchor_date.fromordinal(anchor_date.toordinal() - anchor_date.weekday())
+    week_end = week_start.fromordinal(week_start.toordinal() + 6)
+    opens = get_open_trade_dates(start=week_start.strftime("%Y%m%d"), end=week_end.strftime("%Y%m%d"))
+    return opens[-1] if opens else None
+
+
+def get_month_last_open_date(anchor_date: date) -> date | None:
+    """返回 anchor 所在自然月最后一个开市日。"""
+    last_cal = date(anchor_date.year, anchor_date.month, calendar.monthrange(anchor_date.year, anchor_date.month)[1])
+    opens = get_open_trade_dates(
+        start=date(anchor_date.year, anchor_date.month, 1).strftime("%Y%m%d"),
+        end=last_cal.strftime("%Y%m%d"),
+    )
+    return opens[-1] if opens else None

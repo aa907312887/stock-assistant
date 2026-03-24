@@ -35,6 +35,18 @@
         <el-form-item>
           <el-button type="primary" @click="handleSearch">查询</el-button>
         </el-form-item>
+        <el-form-item label="补偿交易日">
+          <el-date-picker
+            v-model="retryTradeDate"
+            type="date"
+            value-format="YYYY-MM-DD"
+            placeholder="选择交易日"
+            style="width: 160px"
+          />
+        </el-form-item>
+        <el-form-item>
+          <el-button type="warning" :loading="retrying" @click="handleRetryTradeDate">补偿重试</el-button>
+        </el-form-item>
       </el-form>
 
       <el-table v-loading="loading" :data="items" stripe border>
@@ -76,7 +88,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import { getSyncJobDetail, getSyncJobs, type SyncJobItem } from '@/api/syncJob'
+import { getSyncJobDetail, getSyncJobs, retrySyncByTradeDate, type SyncJobItem } from '@/api/syncJob'
 
 const statusFilter = ref<string | undefined>()
 const modeFilter = ref<string | undefined>()
@@ -87,6 +99,8 @@ const page = ref(1)
 const pageSize = ref(20)
 const drawerVisible = ref(false)
 const detailText = ref('')
+const retryTradeDate = ref('')
+const retrying = ref(false)
 
 async function fetchJobs() {
   loading.value = true
@@ -123,7 +137,27 @@ async function showDetail(batchId: string) {
   }
 }
 
+async function handleRetryTradeDate() {
+  if (!retryTradeDate.value) {
+    ElMessage.warning('请先选择需要补偿的交易日')
+    return
+  }
+  retrying.value = true
+  try {
+    const res = await retrySyncByTradeDate({ trade_date: retryTradeDate.value })
+    ElMessage.success(`补偿任务已启动：${res.data.batch_id}`)
+    page.value = 1
+    await fetchJobs()
+  } catch (e: unknown) {
+    const msg = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail || '补偿触发失败'
+    ElMessage.error(msg)
+  } finally {
+    retrying.value = false
+  }
+}
+
 onMounted(() => {
+  retryTradeDate.value = new Date().toISOString().slice(0, 10)
   fetchJobs()
 })
 </script>
