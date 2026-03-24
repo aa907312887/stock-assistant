@@ -13,6 +13,7 @@ from app.api.stock import router as stock_router
 from app.api.stock_basic import router as stock_basic_router
 from app.api.investment_logic import router as investment_logic_router
 from app.api.portfolio import router as portfolio_router
+from app.api.market_temperature import router as market_temperature_router
 from app.core.scheduler import shutdown_scheduler, start_scheduler
 
 # 日志：同时输出到控制台和文件 backend/logs/app.log（文件每次写入后 flush，避免 500 时看不到）
@@ -72,6 +73,7 @@ app.include_router(stock_router, prefix="/api")
 app.include_router(stock_basic_router, prefix="/api")
 app.include_router(investment_logic_router, prefix="/api")
 app.include_router(portfolio_router, prefix="/api")
+app.include_router(market_temperature_router, prefix="/api")
 
 
 @app.exception_handler(Exception)

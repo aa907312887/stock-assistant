@@ -445,6 +445,33 @@ def get_latest_open_trade_date(ref_date: date) -> date | None:
     return open_dates[-1]
 
 
+def get_index_daily_range(ts_code: str, *, start_date: date, end_date: date) -> list[dict[str, Any]]:
+    """获取指数区间日线（index_daily）。"""
+    pro = _get_pro()
+    last_err: Exception | None = None
+    for attempt in range(MAX_RETRIES):
+        try:
+            df = pro.index_daily(
+                ts_code=ts_code,
+                start_date=start_date.strftime("%Y%m%d"),
+                end_date=end_date.strftime("%Y%m%d"),
+            )
+            return _df_to_records(df)
+        except Exception as e:
+            last_err = e
+            logger.warning(
+                "Tushare index_daily 失败 attempt=%s code=%s start=%s end=%s error=%s",
+                attempt + 1,
+                ts_code,
+                start_date,
+                end_date,
+                e,
+            )
+            if attempt < MAX_RETRIES - 1:
+                time.sleep(RETRY_INTERVAL_SEC)
+    raise TushareClientError(f"Tushare index_daily 失败: {last_err}") from last_err
+
+
 def _safe_trade_date(text: str) -> date | None:
     text = text.strip()
     if not text:

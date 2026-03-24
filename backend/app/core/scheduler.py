@@ -4,6 +4,7 @@ from datetime import date, datetime, timedelta
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
+from apscheduler.triggers.date import DateTrigger
 
 from app.core.scheduled_job_logging import guess_tushare_api_from_exception, log_scheduled_job_failure
 from app.database import SessionLocal
@@ -15,6 +16,7 @@ from app.services.sync_task_runner import (
     mark_stale_running_sync_tasks_failed,
 )
 from app.services.tushare_client import get_latest_open_trade_date
+from app.services.market_temperature.temperature_job_service import run_incremental_temperature_job
 
 logger = logging.getLogger(__name__)
 
@@ -24,6 +26,7 @@ SCHEDULED_SYNC_MODULES = ["basic", "daily", "weekly", "monthly"]
 _JOB_STOCK_SYNC = "stock_sync"
 _ENTRY_SYNC = "app.core.scheduler._job_sync_stock"
 _BUSINESS_RUN_SYNC = "app.services.stock_sync_service.run_sync"
+_JOB_MARKET_TEMP = "market_temperature_sync"
 
 _scheduler: BackgroundScheduler | None = None
 CRON_HOUR = 17
@@ -56,6 +59,25 @@ def _job_sync_stock() -> None:
             job_id=_JOB_STOCK_SYNC,
             scheduler_entry=_ENTRY_SYNC,
             business_callable="app.services.sync_task_runner.execute_pending_auto_sync",
+            external_api=guess_tushare_api_from_exception(e),
+            exc=e,
+        )
+    finally:
+        db.close()
+
+
+def _job_sync_market_temperature() -> None:
+    """定时同步大盘温度（日频）。"""
+    db = SessionLocal()
+    try:
+        result = run_incremental_temperature_job(db)
+        logger.info("大盘温度定时同步完成 result=%s", result)
+    except Exception as e:
+        log_scheduled_job_failure(
+            logger,
+            job_id=_JOB_MARKET_TEMP,
+            scheduler_entry="app.core.scheduler._job_sync_market_temperature",
+            business_callable="app.services.market_temperature.temperature_job_service.run_incremental_temperature_job",
             external_api=guess_tushare_api_from_exception(e),
             exc=e,
         )
@@ -97,6 +119,18 @@ def start_scheduler() -> None:
         _job_sync_stock,
         trigger=CronTrigger(hour=CRON_HOUR, minute=CRON_MINUTE, timezone=TIMEZONE),
         id=_JOB_STOCK_SYNC,
+        replace_existing=True,
+    )
+    _scheduler.add_job(
+        _job_sync_market_temperature,
+        trigger=CronTrigger(hour=17, minute=10, timezone=TIMEZONE),
+        id=_JOB_MARKET_TEMP,
+        replace_existing=True,
+    )
+    _scheduler.add_job(
+        _job_sync_market_temperature,
+        trigger=DateTrigger(run_date=datetime.now() + timedelta(seconds=30), timezone=TIMEZONE),
+        id=f"{_JOB_MARKET_TEMP}_bootstrap",
         replace_existing=True,
     )
     _scheduler.start()
