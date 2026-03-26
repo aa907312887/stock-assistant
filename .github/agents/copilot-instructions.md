@@ -1,6 +1,6 @@
 # stock-assistant Development Guidelines
 
-Auto-generated from all feature plans. Last updated: 2026-03-22
+Auto-generated from all feature plans. Last updated: 2026-03-24
 
 ## Active Technologies
 - Python 3.12（后端）、TypeScript（前端） + FastAPI、Vue 3、Vite、SQLAlchemy、MySQL、pandas、APScheduler、Tushare API (002-综合选股)

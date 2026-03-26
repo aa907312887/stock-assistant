@@ -4,6 +4,7 @@
       <h1 class="title">欢迎，{{ displayName }}</h1>
     </header>
 
+    <div class="home-grid">
     <el-card class="hero" shadow="never">
       <template #header>
         <div class="hero-header">
@@ -81,6 +82,8 @@
         </div>
       </template>
     </el-card>
+    <MarketTemperatureCard class="temp-side" />
+    </div>
 
     <el-drawer
       v-model="historyDrawerVisible"
@@ -205,6 +208,7 @@ import {
   type InvestmentLogicEntry,
   type InvestmentLogicPayload,
 } from '@/api/investmentLogic'
+import MarketTemperatureCard from '@/components/MarketTemperatureCard.vue'
 
 const userStore = useUserStore()
 const displayName = computed(() => userStore.user?.username ?? '用户')
@@ -422,7 +426,8 @@ onMounted(async () => {
 
 <style scoped>
 .home {
-  max-width: 1200px;
+  max-width: 100%;
+  min-height: calc(100vh - 120px);
 }
 .welcome {
   margin-bottom: 16px;
@@ -438,6 +443,19 @@ onMounted(async () => {
   border: 2px solid #c45656;
   background: linear-gradient(180deg, #fff5f5 0%, #ffffff 52%);
   box-shadow: 0 8px 32px rgba(196, 86, 86, 0.14);
+}
+.home-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+  min-height: calc(100vh - 170px);
+}
+.temp-side {
+  position: sticky;
+  top: 8px;
+  height: calc(100vh - 185px);
+  overflow: auto;
 }
 .hero :deep(.el-card__header) {
   padding: 18px 28px;
@@ -653,5 +671,13 @@ onMounted(async () => {
 }
 .history-cell-insights {
   line-height: 1.65;
+}
+@media (max-width: 1100px) {
+  .home-grid {
+    grid-template-columns: 1fr;
+  }
+  .temp-side {
+    position: static;
+  }
 }
 </style>

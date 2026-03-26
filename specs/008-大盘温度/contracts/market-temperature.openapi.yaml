@@ -1,0 +1,275 @@
+openapi: 3.0.3
+info:
+  title: 大盘温度接口契约
+  version: 1.0.0
+  description: 首页大盘温度展示、趋势查询、口径说明与手动重算接口
+servers:
+  - url: /api
+paths:
+  /market-temperature/latest:
+    get:
+      summary: 获取最新大盘温度卡片数据
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LatestTemperatureResponse'
+        '500':
+          description: 服务异常
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /market-temperature/trend:
+    get:
+      summary: 获取温度趋势数据
+      parameters:
+        - in: query
+          name: days
+          schema:
+            type: integer
+            minimum: 5
+            maximum: 120
+            default: 20
+          description: 查询最近 N 个交易日
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrendResponse'
+        '400':
+          description: 参数错误
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /market-temperature/explain:
+    get:
+      summary: 获取“?”口径说明
+      parameters:
+        - in: query
+          name: version
+          schema:
+            type: string
+            example: v1.0.0
+          required: false
+          description: 不传时返回当前生效版本
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExplainResponse'
+        '404':
+          description: 版本不存在
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /market-temperature/rebuild:
+    post:
+      summary: 管理员手动触发重算
+      parameters:
+        - in: header
+          name: X-Admin-Secret
+          required: true
+          schema:
+            type: string
+          description: 管理员密钥
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RebuildRequest'
+      responses:
+        '200':
+          description: 已受理
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RebuildResponse'
+        '401':
+          description: 未授权
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: 参数校验失败
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+components:
+  schemas:
+    LatestTemperatureResponse:
+      type: object
+      properties:
+        trade_date:
+          type: string
+          format: date
+        temperature_score:
+          type: number
+          format: float
+        temperature_level:
+          type: string
+          enum: [极冷, 偏冷, 中性, 偏热, 过热]
+        trend_flag:
+          type: string
+          enum: [升温, 降温, 持平]
+        strategy_hint:
+          type: string
+        updated_at:
+          type: string
+          format: date-time
+        data_status:
+          type: string
+          enum: [normal, stale, failed]
+        level_styles:
+          type: array
+          items:
+            $ref: '#/components/schemas/LevelStyle'
+      required:
+        - trade_date
+        - temperature_score
+        - temperature_level
+        - trend_flag
+        - strategy_hint
+        - updated_at
+        - data_status
+        - level_styles
+
+    TrendResponse:
+      type: object
+      properties:
+        formula_version:
+          type: string
+        points:
+          type: array
+          items:
+            type: object
+            properties:
+              trade_date:
+                type: string
+                format: date
+              temperature_score:
+                type: number
+                format: float
+              temperature_level:
+                type: string
+              trend_flag:
+                type: string
+            required: [trade_date, temperature_score, temperature_level, trend_flag]
+      required: [formula_version, points]
+
+    ExplainResponse:
+      type: object
+      properties:
+        formula_version:
+          type: string
+        score_pipeline:
+          type: object
+          description: 三因子共用的「原始值→0～100 分」与总分合成说明
+          properties:
+            title:
+              type: string
+            body:
+              type: string
+          required: [title, body]
+        factors:
+          type: array
+          items:
+            type: object
+            properties:
+              factor_name:
+                type: string
+              weight:
+                type: number
+                format: float
+              description:
+                type: string
+                description: 因子一句话摘要
+              calculation_detail:
+                type: string
+                description: 公式、窗口与合成步骤（多段文本）
+              design_rationale:
+                type: string
+                description: 设计意图与与其它因子的分工
+            required: [factor_name, weight, description, calculation_detail, design_rationale]
+        content:
+          type: string
+          description: 可选补充说明（来自 DB）；主文以 score_pipeline 与 factors 为准
+        levels:
+          type: array
+          items:
+            type: object
+            properties:
+              level_name:
+                type: string
+              score_range:
+                type: string
+              action:
+                type: string
+            required: [level_name, score_range, action]
+        updated_at:
+          type: string
+          format: date-time
+      required: [formula_version, score_pipeline, factors, levels, updated_at]
+
+    RebuildRequest:
+      type: object
+      properties:
+        start_date:
+          type: string
+          format: date
+        end_date:
+          type: string
+          format: date
+        formula_version:
+          type: string
+          example: v1.0.0
+        force_refresh_source:
+          type: boolean
+          default: false
+      required: [start_date, end_date]
+
+    RebuildResponse:
+      type: object
+      properties:
+        task_id:
+          type: string
+        status:
+          type: string
+          enum: [accepted]
+        message:
+          type: string
+      required: [task_id, status, message]
+
+    LevelStyle:
+      type: object
+      properties:
+        level_name:
+          type: string
+        visual_token:
+          type: string
+        short_desc:
+          type: string
+      required: [level_name, visual_token, short_desc]
+
+    ErrorResponse:
+      type: object
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+      required: [code, message]

@@ -1,0 +1,271 @@
+openapi: 3.0.3
+info:
+  title: 策略选股接口契约
+  version: 1.0.0
+  description: 内置策略列表、策略详情与策略执行（本期不含历史回测）
+servers:
+  - url: /api
+paths:
+  /strategies:
+    get:
+      summary: 获取内置策略列表
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListStrategiesResponse'
+        '500':
+          description: 服务异常
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /strategies/{strategy_id}:
+    get:
+      summary: 获取策略详情（用于策略页面展示）
+      parameters:
+        - in: path
+          name: strategy_id
+          required: true
+          schema:
+            type: string
+          description: 策略标识（如 chong_gao_hui_luo）
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GetStrategyResponse'
+        '404':
+          description: 策略不存在
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /strategies/{strategy_id}/execute:
+    post:
+      summary: 执行策略选股（写入执行快照与信号事件）
+      parameters:
+        - in: path
+          name: strategy_id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExecuteStrategyRequest'
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExecuteStrategyResponse'
+        '400':
+          description: 参数错误
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: 策略不存在
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: 数据未就绪
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: 服务异常
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /strategies/{strategy_id}/latest:
+    get:
+      summary: 查询某策略最新一次已落库结果（只读，不触发执行）
+      parameters:
+        - in: path
+          name: strategy_id
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: as_of_date
+          required: false
+          schema:
+            type: string
+            format: date
+          description: 指定截止时间点；不传则返回该策略最新一次已落库结果
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExecuteStrategyResponse'
+        '404':
+          description: 暂无已生成结果
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: 服务异常
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+components:
+  schemas:
+    StrategySummary:
+      type: object
+      properties:
+        strategy_id:
+          type: string
+        name:
+          type: string
+        version:
+          type: string
+        short_description:
+          type: string
+        route_path:
+          type: string
+          description: 前端路由入口（如 /strategy/chong-gao-hui-luo）
+      required: [strategy_id, name, version, short_description, route_path]
+
+    ListStrategiesResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/StrategySummary'
+      required: [items]
+
+    GetStrategyResponse:
+      type: object
+      properties:
+        strategy_id:
+          type: string
+        name:
+          type: string
+        version:
+          type: string
+        description:
+          type: string
+        assumptions:
+          type: array
+          items:
+            type: string
+        risks:
+          type: array
+          items:
+            type: string
+      required: [strategy_id, name, version, description, assumptions, risks]
+
+    ExecuteStrategyRequest:
+      type: object
+      properties:
+        as_of_date:
+          type: string
+          format: date
+          description: 截止时间点；不传则使用数据库最新交易日
+
+    ExecutionSnapshot:
+      type: object
+      properties:
+        execution_id:
+          type: string
+        strategy_id:
+          type: string
+        strategy_version:
+          type: string
+        market:
+          type: string
+          enum: [A股]
+        as_of_date:
+          type: string
+          format: date
+        timeframe:
+          type: string
+          enum: [daily]
+        assumptions:
+          type: object
+          additionalProperties: true
+          description: 执行口径与假设（JSON）
+      required: [execution_id, strategy_id, strategy_version, market, as_of_date, timeframe, assumptions]
+
+    StrategySelectionItem:
+      type: object
+      properties:
+        stock_code:
+          type: string
+        stock_name:
+          type: string
+        exchange_type:
+          type: string
+          nullable: true
+          description: 交易所/板块类型（如上交所/深交所/北交所/创业板/科创板等，取决于基础数据 market 字段）
+        trigger_date:
+          type: string
+          format: date
+        summary:
+          type: object
+          additionalProperties: true
+      required: [stock_code, stock_name, exchange_type, trigger_date, summary]
+
+    SignalEvent:
+      type: object
+      properties:
+        stock_code:
+          type: string
+        event_date:
+          type: string
+          format: date
+        event_type:
+          type: string
+          enum: [trigger, entry, exit, filter, note]
+        payload:
+          type: object
+          additionalProperties: true
+      required: [stock_code, event_date, event_type, payload]
+
+    ExecuteStrategyResponse:
+      type: object
+      properties:
+        execution:
+          $ref: '#/components/schemas/ExecutionSnapshot'
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/StrategySelectionItem'
+        signals:
+          type: array
+          items:
+            $ref: '#/components/schemas/SignalEvent'
+      required: [execution, items, signals]
+
+    ErrorResponse:
+      type: object
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+      required: [code, message]
+

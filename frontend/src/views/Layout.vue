@@ -11,7 +11,7 @@
       <el-aside width="200px" class="aside">
         <el-menu
           :default-active="activeMenu"
-          :default-openeds="['stock-info', 'personal-services']"
+          :default-openeds="['stock-info', 'personal-services', 'strategy']"
           router
           class="menu"
         >
@@ -26,6 +26,10 @@
           <el-sub-menu index="personal-services">
             <template #title>个人服务</template>
             <el-menu-item index="/personal-holdings">个人持仓</el-menu-item>
+          </el-sub-menu>
+          <el-sub-menu index="strategy">
+            <template #title>策略选股</template>
+            <el-menu-item index="/strategy/chong-gao-hui-luo">冲高回落战法</el-menu-item>
           </el-sub-menu>
         </el-menu>
       </el-aside>

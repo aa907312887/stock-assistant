@@ -25,6 +25,11 @@ const router = createRouter({
           name: 'personal-holdings',
           component: () => import('@/views/PersonalHoldingsView.vue'),
         },
+        {
+          path: 'strategy/chong-gao-hui-luo',
+          name: 'strategy-chong-gao-hui-luo',
+          component: () => import('@/views/ChongGaoHuiLuoView.vue'),
+        },
       ],
     },
     { path: '/:pathMatch(.*)*', redirect: '/' },
