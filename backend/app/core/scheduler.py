@@ -17,6 +17,7 @@ from app.services.sync_task_runner import (
 )
 from app.services.tushare_client import get_latest_open_trade_date
 from app.services.market_temperature.temperature_job_service import run_incremental_temperature_job
+from app.services.strategy.strategy_execute_service import StrategyDataNotReadyError, execute_strategy
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +28,7 @@ _JOB_STOCK_SYNC = "stock_sync"
 _ENTRY_SYNC = "app.core.scheduler._job_sync_stock"
 _BUSINESS_RUN_SYNC = "app.services.stock_sync_service.run_sync"
 _JOB_MARKET_TEMP = "market_temperature_sync"
+_JOB_STRATEGY_CGHL = "strategy_chong_gao_hui_luo_daily"
 
 _scheduler: BackgroundScheduler | None = None
 CRON_HOUR = 17
@@ -85,6 +87,34 @@ def _job_sync_market_temperature() -> None:
         db.close()
 
 
+def _job_strategy_chong_gao_hui_luo_daily() -> None:
+    """定时任务：交易日每日筛选“冲高回落战法”的今日候选并落库。"""
+    today = date.today()
+    latest = get_latest_open_trade_date(today)
+    if latest is None or latest != today:
+        logger.info("冲高回落定时筛选跳过：今日非交易日（最近开市日=%s）", latest)
+        return
+
+    db = SessionLocal()
+    try:
+        # 依赖日线数据已同步到当天；若未就绪则跳过（避免写入不完整结果）
+        execute_strategy(db, strategy_id="chong_gao_hui_luo", as_of_date=today)
+        logger.info("冲高回落定时筛选完成 as_of_date=%s", today)
+    except StrategyDataNotReadyError as e:
+        logger.info("冲高回落定时筛选跳过：数据未就绪 as_of_date=%s reason=%s", today, e)
+    except Exception as e:
+        log_scheduled_job_failure(
+            logger,
+            job_id=_JOB_STRATEGY_CGHL,
+            scheduler_entry="app.core.scheduler._job_strategy_chong_gao_hui_luo_daily",
+            business_callable="app.services.strategy.strategy_execute_service.execute_strategy",
+            external_api=None,
+            exc=e,
+        )
+    finally:
+        db.close()
+
+
 def _mark_stale_running_jobs_failed() -> None:
     """将长时间停留在 running 的记录标为失败，避免进程中断后页面永远显示运行中。"""
     db = SessionLocal()
@@ -131,6 +161,12 @@ def start_scheduler() -> None:
         _job_sync_market_temperature,
         trigger=DateTrigger(run_date=datetime.now() + timedelta(seconds=30), timezone=TIMEZONE),
         id=f"{_JOB_MARKET_TEMP}_bootstrap",
+        replace_existing=True,
+    )
+    _scheduler.add_job(
+        _job_strategy_chong_gao_hui_luo_daily,
+        trigger=CronTrigger(hour=17, minute=20, timezone=TIMEZONE),
+        id=_JOB_STRATEGY_CGHL,
         replace_existing=True,
     )
     _scheduler.start()

@@ -15,6 +15,9 @@ from app.models.market_temperature_daily import MarketTemperatureDaily
 from app.models.market_temperature_factor_daily import MarketTemperatureFactorDaily
 from app.models.market_temperature_level_rule import MarketTemperatureLevelRule
 from app.models.market_temperature_copywriting import MarketTemperatureCopywriting
+from app.models.strategy_execution_snapshot import StrategyExecutionSnapshot
+from app.models.strategy_selection_item import StrategySelectionItem
+from app.models.strategy_signal_event import StrategySignalEvent
 
 __all__ = [
     "User",
@@ -34,4 +37,7 @@ __all__ = [
     "MarketTemperatureFactorDaily",
     "MarketTemperatureLevelRule",
     "MarketTemperatureCopywriting",
+    "StrategyExecutionSnapshot",
+    "StrategySelectionItem",
+    "StrategySignalEvent",
 ]
