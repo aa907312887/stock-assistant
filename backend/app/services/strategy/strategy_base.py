@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date
 from typing import Any, Protocol
 
@@ -53,13 +53,41 @@ class StrategyExecutionResult:
     signals: list[StrategySignal]
 
 
+@dataclass(frozen=True)
+class BacktestTrade:
+    """回测中的单笔模拟交易。"""
+
+    stock_code: str
+    stock_name: str | None
+    buy_date: date
+    buy_price: float
+    sell_date: date | None = None
+    sell_price: float | None = None
+    return_rate: float | None = None
+    trade_type: str = "closed"
+    exchange: str | None = None
+    market: str | None = None
+    market_temp_score: float | None = None
+    market_temp_level: str | None = None
+    extra: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class BacktestResult:
+    """策略 backtest() 方法的返回值。"""
+
+    trades: list[BacktestTrade]
+    skipped_count: int = 0
+    skip_reasons: list[str] = field(default_factory=list)
+
+
 class StockStrategy(Protocol):
     """
     策略接口（强约束）。
 
     说明：
     - 策略以代码交付，用户不可在界面配置策略逻辑。
-    - 后续回测会直接调用策略的“选股/买入/卖出”逻辑推进交易，因此策略必须在接口层稳定。
+    - 后续回测会直接调用策略的"选股/买入/卖出"逻辑推进交易，因此策略必须在接口层稳定。
     """
 
     strategy_id: str
@@ -69,3 +97,4 @@ class StockStrategy(Protocol):
 
     def execute(self, *, as_of_date: date | None = None) -> StrategyExecutionResult: ...
 
+    def backtest(self, *, start_date: date, end_date: date) -> BacktestResult: ...

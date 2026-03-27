@@ -51,8 +51,10 @@
 
 from __future__ import annotations
 
+import logging
+from collections import defaultdict
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 from typing import Any
 
@@ -62,12 +64,16 @@ from app.database import SessionLocal
 from app.models import StockBasic, StockDailyBar
 from app.services.screening_service import get_latest_bar_date
 from app.services.strategy.strategy_base import (
+    BacktestResult,
+    BacktestTrade,
     StockStrategy,
     StrategyCandidate,
     StrategyDescriptor,
     StrategyExecutionResult,
     StrategySignal,
 )
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -103,6 +109,7 @@ class ChongGaoHuiLuoStrategy(StockStrategy):
                 "当前无分时数据，涉及“开盘买入/卖出”的规则仅做口径记录，本期不计算真实成交。",
                 "大涨口径采用 (high-open)/open；回落口径采用 (high-close)/high。",
                 "放量口径：volume_T >= volume_{T-1} * (4/3)，前一日成交量须 > 0。",
+                "首根约束：触发日前 10 个交易日内不得出现 (high-open)/open >= 10% 的大涨。",
             ],
             risks=[
                 "策略基于历史日线形态筛选，不保证未来收益；极端行情下形态可能失真。",
@@ -145,6 +152,184 @@ class ChongGaoHuiLuoStrategy(StockStrategy):
             )
         finally:
             db.close()
+
+    def backtest(self, *, start_date: date, end_date: date) -> BacktestResult:
+        """历史回测：批量查询日线数据，逐日扫描触发→模拟 T+1 买入 / T+2 卖出。"""
+        th = _Thresholds()
+        db = SessionLocal()
+        try:
+            return self._run_backtest(db, start_date, end_date, th)
+        finally:
+            db.close()
+
+    @staticmethod
+    def _run_backtest(db, start_date: date, end_date: date, th: _Thresholds) -> BacktestResult:
+        extended_start = start_date - timedelta(days=40)
+        extended_end = end_date + timedelta(days=10)
+
+        stmt = (
+            select(
+                StockDailyBar.stock_code,
+                StockDailyBar.trade_date,
+                StockDailyBar.open,
+                StockDailyBar.high,
+                StockDailyBar.close,
+                StockDailyBar.volume,
+                StockDailyBar.pct_change,
+                StockDailyBar.ma5,
+                StockDailyBar.ma10,
+                StockDailyBar.ma20,
+                StockDailyBar.ma60,
+                StockDailyBar.macd_hist,
+            )
+            .where(StockDailyBar.trade_date.between(extended_start, extended_end))
+            .order_by(StockDailyBar.stock_code, StockDailyBar.trade_date)
+        )
+        rows = db.execute(stmt).all()
+        logger.info("回测数据加载完成: %d 条日线记录", len(rows))
+
+        stock_info: dict[str, str | None] = dict(db.query(StockBasic.code, StockBasic.name).all())
+        st_codes = {
+            code for code, name in stock_info.items()
+            if name and (name.startswith("ST") or name.startswith("*ST"))
+        }
+
+        stock_bars: dict[str, list] = defaultdict(list)
+        for row in rows:
+            if row.stock_code not in st_codes:
+                stock_bars[row.stock_code].append(row)
+
+        all_market_dates = sorted({row.trade_date for row in rows})
+        market_next: dict[date, date] = {}
+        market_next2: dict[date, date] = {}
+        for i in range(len(all_market_dates) - 1):
+            market_next[all_market_dates[i]] = all_market_dates[i + 1]
+        for i in range(len(all_market_dates) - 2):
+            market_next2[all_market_dates[i]] = all_market_dates[i + 2]
+
+        trades: list[BacktestTrade] = []
+        skipped = 0
+        skip_reasons: list[str] = []
+        big_rise_pct_f = float(th.big_rise_pct)
+        pullback_pct_f = float(th.pullback_pct)
+        gap_down_pct_f = float(th.gap_down_pct)
+        lookback_max_pct_f = float(th.lookback_max_pct_change)
+
+        for code, bars_list in stock_bars.items():
+            stock_name = stock_info.get(code)
+            date_idx = {b.trade_date: i for i, b in enumerate(bars_list)}
+
+            for i, bar_t in enumerate(bars_list):
+                trigger_date = bar_t.trade_date
+                if trigger_date < start_date or trigger_date > end_date:
+                    continue
+
+                o, h, c = bar_t.open, bar_t.high, bar_t.close
+                if not (o and h and c) or float(o) <= 0:
+                    continue
+
+                o_f, h_f, c_f = float(o), float(h), float(c)
+                big_rise = (h_f - o_f) / o_f
+                if big_rise < big_rise_pct_f:
+                    continue
+                pullback = (h_f - c_f) / h_f
+                if pullback < pullback_pct_f:
+                    continue
+                if c_f < o_f:
+                    continue
+                if bar_t.pct_change is None or float(bar_t.pct_change) <= 0:
+                    continue
+
+                if i == 0:
+                    continue
+                bar_prev = bars_list[i - 1]
+                if not (bar_t.volume and bar_prev.volume and float(bar_prev.volume) > 0):
+                    continue
+                if float(bar_t.volume) * th.volume_vs_prev_denominator < float(bar_prev.volume) * th.volume_vs_prev_numerator:
+                    continue
+
+                if not all([bar_t.ma5, bar_t.ma10, bar_t.ma20, bar_t.ma60]):
+                    continue
+                if not (float(bar_t.ma5) > float(bar_t.ma10) > float(bar_t.ma20) > float(bar_t.ma60)):
+                    continue
+                if bar_t.macd_hist is None or float(bar_t.macd_hist) <= 0:
+                    continue
+
+                has_conflict = False
+                for j in range(max(0, i - th.lookback_trading_days), i):
+                    lb = bars_list[j]
+                    if lb.open and float(lb.open) > 0 and lb.high:
+                        if (float(lb.high) - float(lb.open)) / float(lb.open) >= big_rise_pct_f:
+                            has_conflict = True
+                            break
+                    if lb.pct_change is not None and float(lb.pct_change) > lookback_max_pct_f:
+                        has_conflict = True
+                        break
+                if has_conflict:
+                    continue
+
+                t1_date = market_next.get(trigger_date)
+                if t1_date is None:
+                    skipped += 1
+                    continue
+
+                t1_idx = date_idx.get(t1_date)
+                if t1_idx is None:
+                    skipped += 1
+                    if len(skip_reasons) < 100:
+                        skip_reasons.append(f"{code} {trigger_date}: T+1 停牌")
+                    continue
+
+                bar_t1 = bars_list[t1_idx]
+                if not (bar_t1.open and float(bar_t1.open) > 0):
+                    skipped += 1
+                    continue
+
+                gap_down = (float(bar_t1.open) - c_f) / c_f
+                if gap_down > gap_down_pct_f:
+                    continue
+
+                buy_date = t1_date
+                buy_price = round(float(bar_t1.open), 4)
+                extra = {
+                    "trigger_date": trigger_date.isoformat(),
+                    "surge_pct": round(big_rise, 4),
+                    "pullback_pct": round(pullback, 4),
+                }
+
+                t2_date = market_next2.get(trigger_date)
+                if t2_date is None or t2_date > end_date:
+                    trades.append(BacktestTrade(
+                        stock_code=code, stock_name=stock_name,
+                        buy_date=buy_date, buy_price=buy_price,
+                        trade_type="unclosed", extra=extra,
+                    ))
+                    continue
+
+                t2_idx = date_idx.get(t2_date)
+                if t2_idx is None:
+                    skipped += 1
+                    if len(skip_reasons) < 100:
+                        skip_reasons.append(f"{code} {trigger_date}: T+2 停牌")
+                    continue
+
+                bar_t2 = bars_list[t2_idx]
+                if not (bar_t2.open and float(bar_t2.open) > 0):
+                    skipped += 1
+                    continue
+
+                sell_price = round(float(bar_t2.open), 4)
+                return_rate = round((sell_price - buy_price) / buy_price, 4)
+
+                trades.append(BacktestTrade(
+                    stock_code=code, stock_name=stock_name,
+                    buy_date=buy_date, buy_price=buy_price,
+                    sell_date=t2_date, sell_price=sell_price,
+                    return_rate=return_rate, trade_type="closed", extra=extra,
+                ))
+
+        logger.info("回测扫描完成: trades=%d, skipped=%d", len(trades), skipped)
+        return BacktestResult(trades=trades, skipped_count=skipped, skip_reasons=skip_reasons)
 
     @staticmethod
     def _select_stage1(db, as_of_date: date, th: _Thresholds) -> tuple[list[StrategyCandidate], list[StrategySignal]]:
@@ -246,7 +431,7 @@ class ChongGaoHuiLuoStrategy(StockStrategy):
             select(
                 curr.c.stock_code,
                 StockBasic.name.label("stock_name"),
-                StockBasic.market.label("exchange_type"),
+                func.coalesce(StockBasic.exchange, StockBasic.market).label("exchange_type"),
                 literal(as_of_date).label("trigger_date"),
                 curr.c.open,
                 curr.c.high,

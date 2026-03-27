@@ -12,6 +12,9 @@ class StockBasic(Base):
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     code: Mapped[str] = mapped_column(String(20), unique=True, nullable=False, index=True)
     name: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    # Tushare stock_basic.exchange：SSE/SZSE/BSE（交易所维度）
+    exchange: Mapped[str | None] = mapped_column(String(10), nullable=True, index=True)
+    # Tushare stock_basic.market：主板/创业板/科创板/北交所（板块维度）
     market: Mapped[str | None] = mapped_column(String(20), nullable=True, index=True)
     industry_code: Mapped[str | None] = mapped_column(String(20), nullable=True, index=True)
     industry_name: Mapped[str | None] = mapped_column(String(100), nullable=True)

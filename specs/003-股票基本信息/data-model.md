@@ -12,7 +12,8 @@
 |----------|----------------|------|------|
 | 证券代码 | `code` | VARCHAR(20) UNIQUE | 主业务键，如 `000001.SZ` |
 | 名称 | `name` | VARCHAR(100) | 股票简称 |
-| 市场/交易所 | `market` | VARCHAR(20) | 与现有同步一致（如 SZ/SH） |
+| 交易所 | `exchange` | VARCHAR(10) | Tushare `exchange`（SSE/SZSE/BSE） |
+| 板块 | `market` | VARCHAR(20) | Tushare `market`（主板/创业板/科创板/北交所等） |
 | 行业代码 | `industry_code` | VARCHAR(20) | 可选，来自数据源 |
 | 行业名称 | `industry_name` | VARCHAR(100) | 展示与筛选 |
 | 地域 | `region` | VARCHAR(50) | 对应 Tushare `area` |
@@ -24,7 +25,7 @@
 
 **唯一约束**: `code` 唯一。
 
-**索引**: 已有 `code`、`market`、`industry_code`、`list_date` 等索引，支持筛选与排序。
+**索引**: 已有 `code`、`exchange`、`market`、`industry_code`、`list_date` 等索引，支持筛选与排序。
 
 ## 3. 关系
 

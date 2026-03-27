@@ -1,0 +1,53 @@
+-- 智能回测：回测任务 + 绩效报告
+CREATE TABLE IF NOT EXISTS backtest_task (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  task_id VARCHAR(64) NOT NULL,
+  strategy_id VARCHAR(64) NOT NULL,
+  strategy_version VARCHAR(32) NOT NULL,
+  start_date DATE NOT NULL,
+  end_date DATE NOT NULL,
+  status VARCHAR(20) NOT NULL DEFAULT 'running',
+  total_trades INT NULL,
+  win_trades INT NULL,
+  lose_trades INT NULL,
+  win_rate DECIMAL(8,4) NULL,
+  total_return DECIMAL(12,4) NULL,
+  avg_return DECIMAL(12,4) NULL,
+  max_win DECIMAL(12,4) NULL,
+  max_loss DECIMAL(12,4) NULL,
+  unclosed_count INT NOT NULL DEFAULT 0,
+  skipped_count INT NOT NULL DEFAULT 0,
+  error_message TEXT NULL,
+  assumptions_json JSON NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  finished_at DATETIME NULL,
+  UNIQUE KEY uk_backtest_task_id (task_id),
+  KEY idx_backtest_task_strategy (strategy_id, created_at),
+  KEY idx_backtest_task_status (status)
+);
+
+-- 智能回测：模拟交易明细
+CREATE TABLE IF NOT EXISTS backtest_trade (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  task_id VARCHAR(64) NOT NULL,
+  stock_code VARCHAR(20) NOT NULL,
+  stock_name VARCHAR(50) NULL,
+  buy_date DATE NOT NULL,
+  buy_price DECIMAL(12,4) NOT NULL,
+  sell_date DATE NULL,
+  sell_price DECIMAL(12,4) NULL,
+  return_rate DECIMAL(12,4) NULL,
+  trade_type VARCHAR(16) NOT NULL DEFAULT 'closed',
+  exchange VARCHAR(10) NULL,
+  market VARCHAR(20) NULL,
+  market_temp_score DECIMAL(5,2) NULL,
+  market_temp_level VARCHAR(16) NULL,
+  extra_json JSON NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  KEY idx_bt_trade_task_id (task_id),
+  KEY idx_bt_trade_stock (stock_code, buy_date),
+  KEY idx_bt_trade_type (task_id, trade_type),
+  KEY idx_bt_trade_exchange (task_id, exchange),
+  KEY idx_bt_trade_market (task_id, market),
+  KEY idx_bt_trade_temp (task_id, market_temp_level)
+);

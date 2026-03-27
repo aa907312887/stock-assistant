@@ -387,7 +387,7 @@ def _row_to_item_daily(quote: StockDailyBar, basic: StockBasic, report: StockFin
     return {
         "code": basic.code,
         "name": basic.name,
-        "exchange": basic.market,
+        "exchange": basic.exchange or basic.market,
         "trade_date": quote.trade_date,
         "open": quote.open,
         "high": quote.high,
@@ -428,7 +428,7 @@ def _row_to_item_weekly_monthly(
     return {
         "code": basic.code,
         "name": basic.name,
-        "exchange": basic.market,
+        "exchange": basic.exchange or basic.market,
         "trade_date": end_date,
         "open": quote.open,
         "high": quote.high,

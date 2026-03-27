@@ -30,6 +30,11 @@ const router = createRouter({
           name: 'strategy-chong-gao-hui-luo',
           component: () => import('@/views/ChongGaoHuiLuoView.vue'),
         },
+        {
+          path: 'backtest/history',
+          name: 'backtest-history',
+          component: () => import('@/views/HistoryBacktestView.vue'),
+        },
       ],
     },
     { path: '/:pathMatch(.*)*', redirect: '/' },

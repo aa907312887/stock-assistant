@@ -19,7 +19,8 @@
 | page_size | int | 否 | 默认 `20`，建议 1～100 |
 | code | string | 否 | 代码模糊匹配 |
 | name | string | 否 | 名称模糊匹配 |
-| market | string | 否 | 市场/交易所等值或前缀，按实现约定 |
+| exchange | string | 否 | 交易所等值（SSE/SZSE/BSE） |
+| market | string | 否 | 板块等值（主板/创业板/科创板/北交所等） |
 | industry | string | 否 | 行业名称模糊 |
 
 - **响应 200** JSON:
@@ -30,7 +31,8 @@
     {
       "code": "000001.SZ",
       "name": "平安银行",
-      "market": "SZ",
+      "exchange": "SZSE",
+      "market": "主板",
       "industry_name": "银行",
       "region": "深圳",
       "list_date": "1991-04-03",

@@ -18,6 +18,8 @@ from app.models.market_temperature_copywriting import MarketTemperatureCopywriti
 from app.models.strategy_execution_snapshot import StrategyExecutionSnapshot
 from app.models.strategy_selection_item import StrategySelectionItem
 from app.models.strategy_signal_event import StrategySignalEvent
+from app.models.backtest_task import BacktestTask
+from app.models.backtest_trade import BacktestTrade
 
 __all__ = [
     "User",
@@ -40,4 +42,6 @@ __all__ = [
     "StrategyExecutionSnapshot",
     "StrategySelectionItem",
     "StrategySignalEvent",
+    "BacktestTask",
+    "BacktestTrade",
 ]

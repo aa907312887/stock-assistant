@@ -137,7 +137,7 @@ def get_latest_strategy_result(
     if not snapshot:
         raise StrategyResultNotFoundError("暂无已生成的策略结果，请先等待定时任务或手动执行一次")
 
-    # 候选明细：用 selection_item + stock_basic 补全名称/market
+    # 候选明细：用 selection_item + stock_basic 补全名称/交易所
     rows = (
         db.query(StrategySelectionItem, StockBasic)
         .join(StockBasic, StockBasic.code == StrategySelectionItem.stock_code)
@@ -152,7 +152,7 @@ def get_latest_strategy_result(
             {
                 "stock_code": sel.stock_code,
                 "stock_name": basic.name,
-                "exchange_type": basic.market or summary.get("exchange_type"),
+                "exchange_type": basic.exchange or basic.market or summary.get("exchange_type"),
                 "trigger_date": sel.trigger_date,
                 "summary": summary,
             }

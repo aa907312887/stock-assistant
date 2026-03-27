@@ -19,6 +19,31 @@ router = APIRouter(prefix="/stock/basic", tags=["股票基本信息"])
 _LEGACY_SOURCE_MAP = {"zhitu", "zhitu_api"}
 
 
+def _guess_exchange(code: str, market: str | None, exchange: str | None) -> str | None:
+    if exchange:
+        return exchange
+    if market in {"SSE", "SZSE", "BSE"}:
+        return market
+    if market in {"SH", "SZ", "BJ"}:
+        return {"SH": "SSE", "SZ": "SZSE", "BJ": "BSE"}.get(market)
+    if code.endswith(".SH"):
+        return "SSE"
+    if code.endswith(".SZ"):
+        return "SZSE"
+    if code.endswith(".BJ"):
+        return "BSE"
+    return None
+
+
+def _normalize_market(market: str | None, exchange: str | None) -> str | None:
+    # 老数据里 market 可能存的是 SH/SZ/BJ 或交易所代码，统一不作为板块展示
+    if market in {"SH", "SZ", "BJ", "SSE", "SZSE", "BSE"}:
+        return None
+    if exchange and market == exchange:
+        return None
+    return market
+
+
 def _normalize_data_source(raw: str | None) -> str:
     if not raw:
         return "tushare"
@@ -34,7 +59,8 @@ def list_stock_basic(
     page_size: int = Query(20, ge=1, le=200),
     code: str | None = Query(None, description="股票代码，模糊"),
     name: str | None = Query(None, description="名称，模糊"),
-    market: str | None = Query(None, description="市场/交易所"),
+    exchange: str | None = Query(None, description="交易所（SSE/SZSE/BSE）"),
+    market: str | None = Query(None, description="板块（主板/创业板/科创板/北交所）"),
     industry: str | None = Query(None, description="行业，模糊"),
     db: Session = Depends(get_db),
 ) -> StockBasicListResponse:
@@ -43,6 +69,8 @@ def list_stock_basic(
         q = q.filter(StockBasic.code.like(f"%{code.strip()}%"))
     if name:
         q = q.filter(StockBasic.name.like(f"%{name.strip()}%"))
+    if exchange:
+        q = q.filter(StockBasic.exchange == exchange.strip())
     if market:
         m = market.strip()
         q = q.filter(StockBasic.market == m)
@@ -60,7 +88,8 @@ def list_stock_basic(
         StockBasicItem(
             code=r.code,
             name=r.name,
-            market=r.market,
+            exchange=_guess_exchange(r.code, r.market, r.exchange),
+            market=_normalize_market(r.market, r.exchange),
             industry_name=r.industry_name,
             region=r.region,
             list_date=r.list_date,

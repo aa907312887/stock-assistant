@@ -9,7 +9,7 @@
             <template #content>
               <div class="tip-body">
                 <p><strong>本页能力</strong></p>
-                <p>查看与查询 A 股上市证券的<strong>基础维度</strong>数据（代码、名称、市场、行业、地域、上市日期等）。</p>
+                <p>查看与查询 A 股上市证券的<strong>基础维度</strong>数据（代码、名称、交易所、板块、行业、地域、上市日期等）。</p>
                 <p>数据来源于 <strong>Tushare Pro 接口 stock_basic</strong>，与「综合选股」共用同一份股票主数据；不包含 K 线、实时行情与财务利润表等（请在综合选股查看）。</p>
               </div>
             </template>
@@ -24,8 +24,15 @@
         <el-form-item label="名称">
           <el-input v-model="filters.name" placeholder="模糊" clearable style="width: 140px" />
         </el-form-item>
-        <el-form-item label="市场">
-          <el-input v-model="filters.market" placeholder="等值" clearable style="width: 100px" />
+        <el-form-item label="交易所">
+          <el-select v-model="filters.exchange" placeholder="全部" clearable style="width: 120px">
+            <el-option label="上交所(SSE)" value="SSE" />
+            <el-option label="深交所(SZSE)" value="SZSE" />
+            <el-option label="北交所(BSE)" value="BSE" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="板块">
+          <el-input v-model="filters.market" placeholder="主板/创业板/科创板" clearable style="width: 160px" />
         </el-form-item>
         <el-form-item label="行业">
           <el-input v-model="filters.industry" placeholder="模糊" clearable style="width: 140px" />
@@ -45,7 +52,8 @@
       >
         <el-table-column prop="code" label="代码" width="120" />
         <el-table-column prop="name" label="名称" min-width="120" show-overflow-tooltip />
-        <el-table-column prop="market" label="市场" width="80" />
+        <el-table-column prop="exchange" label="交易所" width="110" />
+        <el-table-column prop="market" label="板块" width="110" />
         <el-table-column prop="industry_name" label="行业" min-width="120" show-overflow-tooltip />
         <el-table-column prop="region" label="地域" width="100" show-overflow-tooltip />
         <el-table-column prop="list_date" label="上市日期" width="120" />
@@ -87,6 +95,7 @@ const lastSyncedAt = ref<string | null>(null)
 const filters = reactive({
   code: '',
   name: '',
+  exchange: '',
   market: '',
   industry: '',
 })
@@ -121,6 +130,7 @@ function buildParams() {
   }
   if (filters.code.trim()) p.code = filters.code.trim()
   if (filters.name.trim()) p.name = filters.name.trim()
+  if (filters.exchange.trim()) p.exchange = filters.exchange.trim()
   if (filters.market.trim()) p.market = filters.market.trim()
   if (filters.industry.trim()) p.industry = filters.industry.trim()
   return p
@@ -153,6 +163,7 @@ function handleSearch() {
 function handleReset() {
   filters.code = ''
   filters.name = ''
+  filters.exchange = ''
   filters.market = ''
   filters.industry = ''
   page.value = 1

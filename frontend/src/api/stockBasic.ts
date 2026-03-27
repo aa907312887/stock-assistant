@@ -3,6 +3,7 @@ import http from './http'
 export interface StockBasicItem {
   code: string
   name: string | null
+  exchange: string | null
   market: string | null
   industry_name: string | null
   region: string | null
@@ -24,6 +25,7 @@ export function getStockBasicList(params: {
   page_size?: number
   code?: string
   name?: string
+  exchange?: string
   market?: string
   industry?: string
 }) {

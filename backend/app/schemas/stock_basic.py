@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 class StockBasicItem(BaseModel):
     code: str
     name: str | None = None
+    exchange: str | None = None
     market: str | None = None
     industry_name: str | None = None
     region: str | None = None

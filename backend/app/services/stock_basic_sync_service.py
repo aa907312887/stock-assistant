@@ -49,14 +49,19 @@ def run_sync_basic_only(db: Session, *, limit: int | None = None) -> dict[str, i
             if not dm:
                 continue
             mc = row.get("mc") or ""
-            jys = row.get("jys") or ""
+            exchange = (row.get("exchange") or "").strip() or None
+            market = (row.get("market") or "").strip() or None
             region = row.get("region")
             ind_name = row.get("industry_name")
             list_d = safe_date(row.get("list_date"))
             existing = db.query(StockBasic).filter(StockBasic.code == dm).first()
             if existing:
                 existing.name = mc
-                existing.market = jys
+                if exchange:
+                    existing.exchange = exchange
+                # market 语义改为板块（主板/创业板/科创板等）
+                if market:
+                    existing.market = market
                 if region is not None:
                     existing.region = region
                 if ind_name is not None:
@@ -71,7 +76,8 @@ def run_sync_basic_only(db: Session, *, limit: int | None = None) -> dict[str, i
                     StockBasic(
                         code=dm,
                         name=mc,
-                        market=jys,
+                        exchange=exchange,
+                        market=market,
                         region=region,
                         industry_name=ind_name,
                         list_date=list_d,

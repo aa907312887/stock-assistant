@@ -103,7 +103,10 @@ def get_stock_list() -> list[dict[str, Any]]:
                     {
                         "dm": tc,
                         "mc": r.get("name") or "",
-                        "jys": _exchange_from_ts_code(tc),
+                        # 交易所维度：优先使用接口 exchange（SSE/SZSE/BSE），缺失时再由 ts_code 后缀兜底
+                        "exchange": (r.get("exchange") or "").strip() or _exchange_from_ts_code(tc),
+                        # 板块维度：主板/创业板/科创板/北交所（直接沿用接口 market 字段）
+                        "market": (r.get("market") or "").strip() or None,
                         "region": area or None,
                         "industry_name": industry or None,
                         "list_date": ld_val,
