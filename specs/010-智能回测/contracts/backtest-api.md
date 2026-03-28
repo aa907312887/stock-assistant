@@ -24,7 +24,7 @@
 
 | 字段 | 类型 | 必填 | 说明 |
 |------|------|------|------|
-| `strategy_id` | string | 是 | 策略标识 |
+| `strategy_id` | string | 是 | 策略标识（如 `chong_gao_hui_luo`、`panic_pullback`） |
 | `start_date` | string (YYYY-MM-DD) | 是 | 回测起始日期 |
 | `end_date` | string (YYYY-MM-DD) | 是 | 回测结束日期 |
 
@@ -205,6 +205,13 @@
 | 参数 | 类型 | 必填 | 默认值 | 说明 |
 |------|------|------|--------|------|
 | `trade_type` | string | 否 | - | 筛选交易类型：`closed` / `unclosed`；不传则返回全部 |
+| `market_temp_level` | string | 否 | - | **兼容**：单个大盘温度级别 |
+| `market` | string | 否 | - | **兼容**：单个板块 |
+| `exchange` | string | 否 | - | **兼容**：单个交易所 |
+| `market_temp_levels` | string | 否 | - | 多选温度，**逗号分隔** |
+| `markets` | string | 否 | - | 多选板块，逗号分隔；空板块用 **`__EMPTY__`**（对应 DB 中 `market` 为空） |
+| `exchanges` | string | 否 | - | 多选交易所，逗号分隔（如 `SSE,SZSE`） |
+| `year` | int | 否 | - | 按**买入日**自然年筛选（1990–2100） |
 | `page` | int | 否 | 1 | 页码 |
 | `page_size` | int | 否 | 50 | 每页条数（最大 200） |
 
@@ -264,7 +271,61 @@
 
 ---
 
-## 5. 可用数据范围
+## 5. 筛选后复算指标
+
+**`GET /api/backtest/tasks/{task_id}/filtered-report`**
+
+在**不重新执行回测**的前提下，按与交易明细相同的筛选条件，对已落库明细复算胜率、总收益率等。
+
+### 请求参数（Query）
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `market_temp_levels` | string | 否 | 逗号分隔 |
+| `markets` | string | 否 | 逗号分隔；`__EMPTY__` 表示空板块 |
+| `exchanges` | string | 否 | 逗号分隔 |
+| `year` | int | 否 | 买入自然年 |
+
+### 响应（200）
+
+- `filters`：回显生效条件（含 `year` 字段，可能为 `null`）
+- `metrics`：`total_trades`（已平仓）、`win_trades`、`lose_trades`、`win_rate`、`total_return`、`avg_return`、`max_win`、`max_loss`、`unclosed_count`、`matched_count`（匹配总行数）
+
+---
+
+## 6. 分年度分析
+
+**`GET /api/backtest/tasks/{task_id}/yearly-analysis`**
+
+按**买入日自然年**聚合；筛选条件与 `filtered-report` / `trades` 一致（温度、交易所、板块、`year` 均为 AND）。
+
+### 请求参数（Query）
+
+同第 5 节（`market_temp_levels`、`markets`、`exchanges`、`year`）。
+
+### 响应（200）
+
+- `filters`：回显
+- `items[]`：`year`、`matched_count`、`total_trades`（已平仓）、`win_trades`、`lose_trades`、`win_rate`、`total_return`、`avg_return`
+
+未指定 `year` 时返回任务内所有出现年份各一行；指定 `year` 时通常仅一行。
+
+---
+
+## 7. 最佳筛选组合（胜率 / 总收益）
+
+**`GET /api/backtest/tasks/{task_id}/best-options`**
+
+枚举「温度 × 交易所 × 板块」各自「不限或单值（含 `__EMPTY__`）」的组合，在内存中计算：
+
+- `best_win_rate`：胜率最高；要求该组合**已平仓笔数** ≥ 任务**总已平仓笔数**的 **⌈N/10⌉**（至少 1）。若无任何组合满足，**回退**为全量不限条件的结果。
+- `best_total_return`：总收益率最高（无上述样本量门槛）。
+
+每项含 `filters` 与 `metrics`（结构同 `filtered-report` 的 `metrics`）。
+
+---
+
+## 8. 可用数据范围
 
 **`GET /api/backtest/data-range`**
 

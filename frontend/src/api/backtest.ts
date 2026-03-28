@@ -96,6 +96,67 @@ export type BacktestTradeListResponse = {
   items: BacktestTradeItem[]
 }
 
+export type BacktestFilteredMetrics = {
+  total_trades: number
+  win_trades: number
+  lose_trades: number
+  win_rate: number
+  total_return: number
+  avg_return: number
+  max_win: number
+  max_loss: number
+  unclosed_count: number
+  matched_count: number
+}
+
+export type BacktestFilteredReportResponse = {
+  task_id: string
+  filters: {
+    market_temp_levels: string[]
+    markets: string[]
+    exchanges: string[]
+    year?: number | null
+  }
+  metrics: BacktestFilteredMetrics
+}
+
+export type BacktestBestOptionItem = {
+  filters: {
+    market_temp_levels: string[]
+    markets: string[]
+    exchanges: string[]
+  }
+  metrics: BacktestFilteredMetrics
+}
+
+export type BacktestBestOptionsResponse = {
+  task_id: string
+  best_win_rate: BacktestBestOptionItem
+  best_total_return: BacktestBestOptionItem
+}
+
+export type BacktestYearlyStatItem = {
+  year: number
+  matched_count: number
+  total_trades: number
+  win_trades: number
+  lose_trades: number
+  win_rate: number
+  total_return: number
+  avg_return: number
+}
+
+export type BacktestYearlyAnalysisResponse = {
+  task_id: string
+  filters: {
+    market_temp_levels: string[]
+    markets: string[]
+    exchanges: string[]
+    year?: number | null
+  }
+  items: BacktestYearlyStatItem[]
+}
+
 export type DataRangeResponse = {
   min_date: string | null
   max_date: string | null
@@ -124,14 +185,70 @@ export async function getBacktestTrades(
   taskId: string,
   params?: {
     trade_type?: string
-    market_temp_level?: string
-    market?: string
-    exchange?: string
+    market_temp_levels?: string[]
+    markets?: string[]
+    exchanges?: string[]
+    year?: number
     page?: number
     page_size?: number
   },
 ) {
-  const res = await http.get<BacktestTradeListResponse>(`/backtest/tasks/${taskId}/trades`, { params })
+  const query = {
+    ...params,
+    market_temp_levels: params?.market_temp_levels?.join(','),
+    markets: params?.markets?.join(','),
+    exchanges: params?.exchanges?.join(','),
+  }
+  const res = await http.get<BacktestTradeListResponse>(`/backtest/tasks/${taskId}/trades`, { params: query })
+  return res.data
+}
+
+export async function getBacktestFilteredReport(
+  taskId: string,
+  params?: {
+    market_temp_levels?: string[]
+    markets?: string[]
+    exchanges?: string[]
+    year?: number
+  },
+) {
+  const query = {
+    market_temp_levels: params?.market_temp_levels?.join(','),
+    markets: params?.markets?.join(','),
+    exchanges: params?.exchanges?.join(','),
+    year: params?.year,
+  }
+  const res = await http.get<BacktestFilteredReportResponse>(
+    `/backtest/tasks/${taskId}/filtered-report`,
+    { params: query },
+  )
+  return res.data
+}
+
+export async function getBacktestYearlyAnalysis(
+  taskId: string,
+  params?: {
+    market_temp_levels?: string[]
+    markets?: string[]
+    exchanges?: string[]
+    year?: number
+  },
+) {
+  const query = {
+    market_temp_levels: params?.market_temp_levels?.join(','),
+    markets: params?.markets?.join(','),
+    exchanges: params?.exchanges?.join(','),
+    year: params?.year,
+  }
+  const res = await http.get<BacktestYearlyAnalysisResponse>(
+    `/backtest/tasks/${taskId}/yearly-analysis`,
+    { params: query },
+  )
+  return res.data
+}
+
+export async function getBacktestBestOptions(taskId: string) {
+  const res = await http.get<BacktestBestOptionsResponse>(`/backtest/tasks/${taskId}/best-options`)
   return res.data
 }
 

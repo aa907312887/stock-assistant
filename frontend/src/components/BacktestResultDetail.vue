@@ -150,7 +150,15 @@
         <div class="section">
           <h4 class="section-title">交易明细</h4>
           <div class="trade-filters">
-            <el-select v-model="tradeFilters.exchange" clearable placeholder="按交易所筛选" style="width: 160px">
+            <el-select
+              v-model="tradeFilters.exchanges"
+              multiple
+              collapse-tags
+              collapse-tags-tooltip
+              clearable
+              placeholder="按交易所筛选"
+              style="width: 240px"
+            >
               <el-option
                 v-for="ex in exchangeOptions"
                 :key="ex.value"
@@ -158,7 +166,15 @@
                 :value="ex.value"
               />
             </el-select>
-            <el-select v-model="tradeFilters.market_temp_level" clearable placeholder="按温度筛选" style="width: 160px">
+            <el-select
+              v-model="tradeFilters.market_temp_levels"
+              multiple
+              collapse-tags
+              collapse-tags-tooltip
+              clearable
+              placeholder="按温度筛选"
+              style="width: 240px"
+            >
               <el-option
                 v-for="lvl in tempLevelOptions"
                 :key="lvl"
@@ -166,17 +182,59 @@
                 :value="lvl"
               />
             </el-select>
-            <el-select v-model="tradeFilters.market" clearable placeholder="按板块筛选" style="width: 180px">
+            <el-select
+              v-model="tradeFilters.markets"
+              multiple
+              collapse-tags
+              collapse-tags-tooltip
+              clearable
+              placeholder="按板块筛选"
+              style="width: 260px"
+            >
               <el-option
                 v-for="m in marketOptions"
                 :key="m"
-                :label="m"
+                :label="m === '__EMPTY__' ? '空板块（北交所等）' : m"
                 :value="m"
+              />
+            </el-select>
+            <el-select
+              v-model="tradeFilters.tradeYear"
+              clearable
+              placeholder="交易年份（全部）"
+              style="width: 140px"
+            >
+              <el-option
+                v-for="y in yearOptions"
+                :key="y"
+                :label="String(y)"
+                :value="y"
               />
             </el-select>
             <el-button @click="handleTradeFilterSearch">筛选</el-button>
             <el-button @click="handleTradeFilterReset">重置</el-button>
+            <el-button type="warning" plain :loading="bestOptionsLoading" @click="handleApplyBestWinRate">
+              选择最佳胜率选项
+            </el-button>
+            <el-button type="danger" plain :loading="bestOptionsLoading" @click="handleApplyBestProfit">
+              选择最佳盈利选项
+            </el-button>
           </div>
+          <div v-if="bestSelectionLabel" class="best-selection-text">{{ bestSelectionLabel }}</div>
+          <el-alert
+            v-if="filteredMetrics"
+            type="info"
+            :closable="false"
+            class="filtered-summary"
+            show-icon
+          >
+            <template #title>
+              条件交叉验证结果：匹配 {{ filteredMetrics.matched_count }} 笔（已平仓 {{ filteredMetrics.total_trades }} 笔），
+              胜率 {{ (filteredMetrics.win_rate * 100).toFixed(1) }}%，
+              总收益 {{ filteredMetrics.total_return >= 0 ? '+' : '' }}{{ (filteredMetrics.total_return * 100).toFixed(2) }}%，
+              平均收益 {{ filteredMetrics.avg_return >= 0 ? '+' : '' }}{{ (filteredMetrics.avg_return * 100).toFixed(2) }}%
+            </template>
+          </el-alert>
           <el-table :data="trades" stripe size="small" v-loading="tradesLoading">
             <el-table-column prop="stock_code" label="代码" width="100" />
             <el-table-column prop="stock_name" label="名称" width="90" />
@@ -224,6 +282,42 @@
               @current-change="loadTrades"
             />
           </div>
+
+          <div class="section yearly-section">
+            <h4 class="section-title">
+              分年度分析
+              <el-tooltip placement="top">
+                <template #content>
+                  <div style="max-width: 320px">
+                    按买入日自然年汇总；与上方温度、交易所、板块、年份筛选条件一致（AND）。胜率与总收益仅基于已平仓交易；匹配笔数含未平仓。
+                  </div>
+                </template>
+                <el-icon class="hint-icon-sm"><QuestionFilled /></el-icon>
+              </el-tooltip>
+            </h4>
+            <el-table :data="yearlyItems" stripe size="small" v-loading="yearlyLoading" empty-text="当前筛选下无数据">
+              <el-table-column prop="year" label="年份" width="80" />
+              <el-table-column prop="matched_count" label="匹配笔数" width="90" align="right" />
+              <el-table-column prop="total_trades" label="已平仓" width="80" align="right" />
+              <el-table-column label="胜率" width="90" align="right">
+                <template #default="{ row }">{{ (row.win_rate * 100).toFixed(1) }}%</template>
+              </el-table-column>
+              <el-table-column label="总收益" width="100" align="right">
+                <template #default="{ row }">
+                  <span :class="row.total_return >= 0 ? 'profit' : 'loss'">
+                    {{ row.total_return >= 0 ? '+' : '' }}{{ (row.total_return * 100).toFixed(2) }}%
+                  </span>
+                </template>
+              </el-table-column>
+              <el-table-column label="平均收益" width="100" align="right">
+                <template #default="{ row }">
+                  <span :class="row.avg_return >= 0 ? 'profit' : 'loss'">
+                    {{ row.avg_return >= 0 ? '+' : '' }}{{ (row.avg_return * 100).toFixed(2) }}%
+                  </span>
+                </template>
+              </el-table-column>
+            </el-table>
+          </div>
         </div>
 
         <!-- 口径说明 -->
@@ -259,10 +353,16 @@
 import { computed, ref, watch } from 'vue'
 import { QuestionFilled } from '@element-plus/icons-vue'
 import {
+  getBacktestBestOptions,
+  getBacktestFilteredReport,
   getBacktestTaskDetail,
   getBacktestTrades,
+  getBacktestYearlyAnalysis,
+  type BacktestBestOptionsResponse,
+  type BacktestFilteredMetrics,
   type BacktestTaskDetailResponse,
   type BacktestTradeItem,
+  type BacktestYearlyStatItem,
 } from '@/api/backtest'
 
 const props = defineProps<{
@@ -276,11 +376,27 @@ defineEmits<{
 const detail = ref<BacktestTaskDetailResponse | null>(null)
 const loading = ref(false)
 const trades = ref<BacktestTradeItem[]>([])
+const filteredMetrics = ref<BacktestFilteredMetrics | null>(null)
+const bestOptions = ref<BacktestBestOptionsResponse | null>(null)
+const bestOptionsLoading = ref(false)
+const bestSelectionLabel = ref('')
 const tradesLoading = ref(false)
 const tradesPage = ref(1)
 const tradesPageSize = 50
 const tradesTotal = ref(0)
-const tradeFilters = ref<{ exchange?: string; market_temp_level?: string; market?: string }>({})
+const yearlyItems = ref<BacktestYearlyStatItem[]>([])
+const yearlyLoading = ref(false)
+const tradeFilters = ref<{
+  exchanges: string[]
+  market_temp_levels: string[]
+  markets: string[]
+  tradeYear: number | undefined
+}>({
+  exchanges: [],
+  market_temp_levels: [],
+  markets: [],
+  tradeYear: undefined,
+})
 
 const tempLevelOptions = computed(() => {
   const levels = detail.value?.report?.temp_level_stats?.map((x) => x.level) ?? []
@@ -288,8 +404,9 @@ const tempLevelOptions = computed(() => {
 })
 
 const marketOptions = computed(() => {
-  const markets = detail.value?.report?.market_stats?.map((x) => x.name) ?? []
-  return markets.filter(Boolean)
+  const markets = detail.value?.report?.market_stats?.map((x) => x.name).filter(Boolean) ?? []
+  // “空板块”主要对应 market 为空（如北交所样本）
+  return ['__EMPTY__', ...markets]
 })
 
 const exchangeOptions = computed(() => {
@@ -300,12 +417,36 @@ const exchangeOptions = computed(() => {
   }))
 })
 
+const yearOptions = computed(() => {
+  const d = detail.value
+  if (!d) return []
+  const y0 = parseInt(d.start_date.slice(0, 4), 10)
+  const y1 = parseInt(d.end_date.slice(0, 4), 10)
+  if (Number.isNaN(y0) || Number.isNaN(y1)) return []
+  const list: number[] = []
+  for (let y = y0; y <= y1; y += 1) list.push(y)
+  return list
+})
+
+function formatFilterText(filters: { market_temp_levels: string[]; markets: string[]; exchanges: string[] }) {
+  const marketText = (filters.markets || [])
+    .map((m) => (m === '__EMPTY__' ? '空板块（北交所等）' : m))
+    .join('、') || '不限'
+  const tempText = (filters.market_temp_levels || []).join('、') || '不限'
+  const exchangeText = (filters.exchanges || []).join('、') || '不限'
+  return `温度=${tempText}；交易所=${exchangeText}；板块=${marketText}`
+}
+
 async function loadDetail() {
   loading.value = true
   try {
     detail.value = await getBacktestTaskDetail(props.taskId)
     tradesPage.value = 1
     await loadTrades()
+    await loadFilteredMetrics()
+    await loadYearlyAnalysis()
+    await loadBestOptions()
+    bestSelectionLabel.value = ''
   } finally {
     loading.value = false
   }
@@ -315,9 +456,10 @@ async function loadTrades() {
   tradesLoading.value = true
   try {
     const res = await getBacktestTrades(props.taskId, {
-      market_temp_level: tradeFilters.value.market_temp_level,
-      market: tradeFilters.value.market,
-      exchange: tradeFilters.value.exchange,
+      market_temp_levels: tradeFilters.value.market_temp_levels,
+      markets: tradeFilters.value.markets,
+      exchanges: tradeFilters.value.exchanges,
+      year: tradeFilters.value.tradeYear,
       page: tradesPage.value,
       page_size: tradesPageSize,
     })
@@ -328,15 +470,93 @@ async function loadTrades() {
   }
 }
 
+async function loadFilteredMetrics() {
+  const res = await getBacktestFilteredReport(props.taskId, {
+    market_temp_levels: tradeFilters.value.market_temp_levels,
+    markets: tradeFilters.value.markets,
+    exchanges: tradeFilters.value.exchanges,
+    year: tradeFilters.value.tradeYear,
+  })
+  filteredMetrics.value = res.metrics
+}
+
+async function loadYearlyAnalysis() {
+  yearlyLoading.value = true
+  try {
+    const res = await getBacktestYearlyAnalysis(props.taskId, {
+      market_temp_levels: tradeFilters.value.market_temp_levels,
+      markets: tradeFilters.value.markets,
+      exchanges: tradeFilters.value.exchanges,
+      year: tradeFilters.value.tradeYear,
+    })
+    yearlyItems.value = res.items
+  } finally {
+    yearlyLoading.value = false
+  }
+}
+
+async function loadBestOptions() {
+  bestOptionsLoading.value = true
+  try {
+    bestOptions.value = await getBacktestBestOptions(props.taskId)
+  } finally {
+    bestOptionsLoading.value = false
+  }
+}
+
+async function applyFiltersAndReload(filters: { market_temp_levels: string[]; markets: string[]; exchanges: string[] }) {
+  tradeFilters.value = {
+    market_temp_levels: [...(filters.market_temp_levels || [])],
+    markets: [...(filters.markets || [])],
+    exchanges: [...(filters.exchanges || [])],
+    tradeYear: tradeFilters.value.tradeYear,
+  }
+  tradesPage.value = 1
+  await loadTrades()
+  await loadFilteredMetrics()
+  await loadYearlyAnalysis()
+}
+
 function handleTradeFilterSearch() {
   tradesPage.value = 1
   loadTrades()
+  loadFilteredMetrics()
+  loadYearlyAnalysis()
+  bestSelectionLabel.value = ''
 }
 
 function handleTradeFilterReset() {
-  tradeFilters.value = {}
+  tradeFilters.value = {
+    exchanges: [],
+    market_temp_levels: [],
+    markets: [],
+    tradeYear: undefined,
+  }
   tradesPage.value = 1
   loadTrades()
+  loadFilteredMetrics()
+  loadYearlyAnalysis()
+  bestSelectionLabel.value = ''
+}
+
+async function handleApplyBestWinRate() {
+  if (!bestOptions.value) {
+    await loadBestOptions()
+  }
+  const target = bestOptions.value?.best_win_rate
+  if (!target) return
+  await applyFiltersAndReload(target.filters)
+  bestSelectionLabel.value = `已应用最佳胜率条件：${formatFilterText(target.filters)}`
+}
+
+async function handleApplyBestProfit() {
+  if (!bestOptions.value) {
+    await loadBestOptions()
+  }
+  const target = bestOptions.value?.best_total_return
+  if (!target) return
+  await applyFiltersAndReload(target.filters)
+  bestSelectionLabel.value = `已应用最佳盈利条件：${formatFilterText(target.filters)}`
 }
 
 watch(() => props.taskId, loadDetail, { immediate: true })
@@ -437,6 +657,20 @@ watch(() => props.taskId, loadDetail, { immediate: true })
   gap: 8px;
   align-items: center;
   flex-wrap: wrap;
+}
+
+.filtered-summary {
+  margin-bottom: 10px;
+}
+
+.yearly-section {
+  margin-top: 20px;
+}
+
+.best-selection-text {
+  margin-bottom: 8px;
+  color: #606266;
+  font-size: 13px;
 }
 
 .assumptions {

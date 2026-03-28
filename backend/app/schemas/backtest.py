@@ -111,6 +111,63 @@ class BacktestTradeListResponse(BaseModel):
     items: list[BacktestTradeItem]
 
 
+class BacktestFilteredMetrics(BaseModel):
+    """按筛选条件复算后的绩效指标。"""
+
+    total_trades: int
+    win_trades: int
+    lose_trades: int
+    win_rate: float
+    total_return: float
+    avg_return: float
+    max_win: float
+    max_loss: float
+    unclosed_count: int
+    matched_count: int
+
+
+class BacktestFilteredReportResponse(BaseModel):
+    """回测结果按条件筛选后的复算响应。"""
+
+    task_id: str
+    filters: dict
+    metrics: BacktestFilteredMetrics
+
+
+class BacktestBestOptionItem(BaseModel):
+    """最佳选项结果（一个目标对应一组条件 + 指标）。"""
+
+    filters: dict
+    metrics: BacktestFilteredMetrics
+
+
+class BacktestBestOptionsResponse(BaseModel):
+    """自动搜索后的最佳胜率/最佳收益条件。"""
+
+    task_id: str
+    best_win_rate: BacktestBestOptionItem
+    best_total_return: BacktestBestOptionItem
+
+
+class BacktestYearlyStatItem(BaseModel):
+    """按买入日自然年聚合的统计（可与温度/交易所/板块/年份筛选组合）。"""
+
+    year: int
+    matched_count: int
+    total_trades: int
+    win_trades: int
+    lose_trades: int
+    win_rate: float
+    total_return: float
+    avg_return: float
+
+
+class BacktestYearlyAnalysisResponse(BaseModel):
+    task_id: str
+    filters: dict
+    items: list[BacktestYearlyStatItem]
+
+
 class DataRangeResponse(BaseModel):
     min_date: date | None = None
     max_date: date | None = None

@@ -3,13 +3,15 @@
 from __future__ import annotations
 
 import logging
+import math
 import threading
 import uuid
+from collections import defaultdict
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import JSONResponse
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app.database import SessionLocal, get_db
@@ -17,7 +19,13 @@ from app.models.backtest_task import BacktestTask
 from app.models.backtest_trade import BacktestTrade as BacktestTradeModel
 from app.models.stock_daily_bar import StockDailyBar
 from app.schemas.backtest import (
+    BacktestBestOptionItem,
+    BacktestBestOptionsResponse,
+    BacktestFilteredMetrics,
+    BacktestFilteredReportResponse,
     BacktestReport,
+    BacktestYearlyAnalysisResponse,
+    BacktestYearlyStatItem,
     DimensionStat,
     BacktestTaskDetailResponse,
     BacktestTaskItem,
@@ -40,6 +48,96 @@ router = APIRouter(prefix="/backtest", tags=["backtest"])
 def _generate_task_id(strategy_id: str, start_date: date, end_date: date) -> str:
     short_uuid = uuid.uuid4().hex[:8]
     return f"bt-{strategy_id}-{start_date:%Y%m%d}-{end_date:%Y%m%d}-{short_uuid}"
+
+
+def _split_csv_param(value: str | None) -> list[str]:
+    """把逗号分隔参数转成字符串数组，自动去空白与空值。"""
+    if not value:
+        return []
+    return [x.strip() for x in value.split(",") if x.strip()]
+
+
+def _apply_trade_filters(
+    query,
+    *,
+    trade_type: str | None,
+    market_temp_levels: list[str],
+    markets: list[str],
+    exchanges: list[str],
+    buy_year: int | None = None,
+):
+    """在交易查询上统一应用筛选条件（支持多选交叉）。"""
+    empty_token = "__EMPTY__"
+
+    if buy_year is not None:
+        query = query.filter(
+            BacktestTradeModel.buy_date >= date(buy_year, 1, 1),
+            BacktestTradeModel.buy_date <= date(buy_year, 12, 31),
+        )
+
+    if trade_type:
+        query = query.filter(BacktestTradeModel.trade_type == trade_type)
+    if market_temp_levels:
+        query = query.filter(BacktestTradeModel.market_temp_level.in_(market_temp_levels))
+    if markets:
+        has_empty = empty_token in markets
+        normal_markets = [m for m in markets if m != empty_token]
+        if has_empty and normal_markets:
+            query = query.filter(
+                or_(
+                    BacktestTradeModel.market.in_(normal_markets),
+                    BacktestTradeModel.market.is_(None),
+                    BacktestTradeModel.market == "",
+                )
+            )
+        elif has_empty:
+            query = query.filter(
+                or_(
+                    BacktestTradeModel.market.is_(None),
+                    BacktestTradeModel.market == "",
+                )
+            )
+        else:
+            query = query.filter(BacktestTradeModel.market.in_(normal_markets))
+    if exchanges:
+        query = query.filter(BacktestTradeModel.exchange.in_(exchanges))
+    return query
+
+
+def _calculate_metrics_from_rows(rows: list[BacktestTradeModel]) -> BacktestFilteredMetrics:
+    matched_count = len(rows)
+    closed = [r for r in rows if r.trade_type == "closed" and r.return_rate is not None]
+    unclosed_count = len([r for r in rows if r.trade_type == "unclosed"])
+    returns = [float(r.return_rate) for r in closed]
+    if not closed:
+        return BacktestFilteredMetrics(
+            total_trades=0,
+            win_trades=0,
+            lose_trades=0,
+            win_rate=0.0,
+            total_return=0.0,
+            avg_return=0.0,
+            max_win=0.0,
+            max_loss=0.0,
+            unclosed_count=unclosed_count,
+            matched_count=matched_count,
+        )
+
+    win_trades = len([x for x in returns if x > 0])
+    lose_trades = len(returns) - win_trades
+    total_trades = len(returns)
+    return BacktestFilteredMetrics(
+        total_trades=total_trades,
+        win_trades=win_trades,
+        lose_trades=lose_trades,
+        win_rate=win_trades / total_trades,
+        total_return=sum(returns),
+        avg_return=sum(returns) / total_trades,
+        max_win=max(returns),
+        max_loss=min(returns),
+        unclosed_count=unclosed_count,
+        matched_count=matched_count,
+    )
 
 
 @router.post("/run")
@@ -204,9 +302,13 @@ def api_get_backtest_task(task_id: str, db: Session = Depends(get_db)):
 def api_get_backtest_trades(
     task_id: str,
     trade_type: str | None = Query(default=None),
-    market_temp_level: str | None = Query(default=None),
-    market: str | None = Query(default=None),
-    exchange: str | None = Query(default=None),
+    market_temp_level: str | None = Query(default=None, description="兼容旧参数：单个温度级别"),
+    market: str | None = Query(default=None, description="兼容旧参数：单个板块"),
+    exchange: str | None = Query(default=None, description="兼容旧参数：单个交易所"),
+    market_temp_levels: str | None = Query(default=None, description="多选温度级别，逗号分隔"),
+    markets: str | None = Query(default=None, description="多选板块，逗号分隔"),
+    exchanges: str | None = Query(default=None, description="多选交易所，逗号分隔"),
+    year: int | None = Query(default=None, ge=1990, le=2100, description="按买入日自然年筛选"),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=50, ge=1, le=200),
     db: Session = Depends(get_db),
@@ -215,15 +317,19 @@ def api_get_backtest_trades(
     if task is None:
         raise HTTPException(status_code=404, detail={"code": "TASK_NOT_FOUND", "message": "回测任务不存在"})
 
+    selected_temp_levels = _split_csv_param(market_temp_levels) or _split_csv_param(market_temp_level)
+    selected_markets = _split_csv_param(markets) or _split_csv_param(market)
+    selected_exchanges = _split_csv_param(exchanges) or _split_csv_param(exchange)
+
     query = db.query(BacktestTradeModel).filter(BacktestTradeModel.task_id == task_id)
-    if trade_type:
-        query = query.filter(BacktestTradeModel.trade_type == trade_type)
-    if market_temp_level:
-        query = query.filter(BacktestTradeModel.market_temp_level == market_temp_level)
-    if market:
-        query = query.filter(BacktestTradeModel.market == market)
-    if exchange:
-        query = query.filter(BacktestTradeModel.exchange == exchange)
+    query = _apply_trade_filters(
+        query,
+        trade_type=trade_type,
+        market_temp_levels=selected_temp_levels,
+        markets=selected_markets,
+        exchanges=selected_exchanges,
+        buy_year=year,
+    )
 
     total = query.count()
     records = query.order_by(BacktestTradeModel.buy_date).offset((page - 1) * page_size).limit(page_size).all()
@@ -248,6 +354,252 @@ def api_get_backtest_trades(
     ]
 
     return BacktestTradeListResponse(total=total, page=page, page_size=page_size, items=items)
+
+
+@router.get("/tasks/{task_id}/filtered-report", response_model=BacktestFilteredReportResponse)
+def api_get_filtered_report(
+    task_id: str,
+    market_temp_levels: str | None = Query(default=None, description="多选温度级别，逗号分隔"),
+    markets: str | None = Query(default=None, description="多选板块，逗号分隔"),
+    exchanges: str | None = Query(default=None, description="多选交易所，逗号分隔"),
+    year: int | None = Query(default=None, ge=1990, le=2100, description="按买入日自然年筛选"),
+    db: Session = Depends(get_db),
+):
+    """
+    对同一回测任务按条件交叉筛选后，复算胜率/总收益等指标。
+
+    说明：该接口基于已落库交易明细计算，不会重新跑策略。
+    """
+    task = db.query(BacktestTask).filter(BacktestTask.task_id == task_id).first()
+    if task is None:
+        raise HTTPException(status_code=404, detail={"code": "TASK_NOT_FOUND", "message": "回测任务不存在"})
+
+    selected_temp_levels = _split_csv_param(market_temp_levels)
+    selected_markets = _split_csv_param(markets)
+    selected_exchanges = _split_csv_param(exchanges)
+
+    query = db.query(BacktestTradeModel).filter(BacktestTradeModel.task_id == task_id)
+    query = _apply_trade_filters(
+        query,
+        trade_type=None,
+        market_temp_levels=selected_temp_levels,
+        markets=selected_markets,
+        exchanges=selected_exchanges,
+        buy_year=year,
+    )
+    rows = query.all()
+    metrics = _calculate_metrics_from_rows(rows)
+
+    return BacktestFilteredReportResponse(
+        task_id=task_id,
+        filters={
+            "market_temp_levels": selected_temp_levels,
+            "markets": selected_markets,
+            "exchanges": selected_exchanges,
+            "year": year,
+        },
+        metrics=metrics,
+    )
+
+
+@router.get("/tasks/{task_id}/yearly-analysis", response_model=BacktestYearlyAnalysisResponse)
+def api_get_yearly_analysis(
+    task_id: str,
+    market_temp_levels: str | None = Query(default=None, description="多选温度级别，逗号分隔"),
+    markets: str | None = Query(default=None, description="多选板块，逗号分隔"),
+    exchanges: str | None = Query(default=None, description="多选交易所，逗号分隔"),
+    year: int | None = Query(default=None, ge=1990, le=2100, description="仅统计该买入自然年；不传则按年分列展示全部"),
+    db: Session = Depends(get_db),
+):
+    """
+    按买入日自然年聚合：每年交易笔数、胜率、总收益等。
+    可与温度/交易所/板块/年份筛选组合；年份与其它条件为 AND。
+    """
+    task = db.query(BacktestTask).filter(BacktestTask.task_id == task_id).first()
+    if task is None:
+        raise HTTPException(status_code=404, detail={"code": "TASK_NOT_FOUND", "message": "回测任务不存在"})
+
+    selected_temp_levels = _split_csv_param(market_temp_levels)
+    selected_markets = _split_csv_param(markets)
+    selected_exchanges = _split_csv_param(exchanges)
+
+    query = db.query(BacktestTradeModel).filter(BacktestTradeModel.task_id == task_id)
+    query = _apply_trade_filters(
+        query,
+        trade_type=None,
+        market_temp_levels=selected_temp_levels,
+        markets=selected_markets,
+        exchanges=selected_exchanges,
+        buy_year=year,
+    )
+    rows = query.order_by(BacktestTradeModel.buy_date).all()
+
+    by_year: dict[int, list] = defaultdict(list)
+    for r in rows:
+        by_year[r.buy_date.year].append(r)
+
+    items: list[BacktestYearlyStatItem] = []
+    for y in sorted(by_year.keys()):
+        m = _calculate_metrics_from_rows(by_year[y])
+        items.append(
+            BacktestYearlyStatItem(
+                year=y,
+                matched_count=m.matched_count,
+                total_trades=m.total_trades,
+                win_trades=m.win_trades,
+                lose_trades=m.lose_trades,
+                win_rate=m.win_rate,
+                total_return=m.total_return,
+                avg_return=m.avg_return,
+            )
+        )
+
+    return BacktestYearlyAnalysisResponse(
+        task_id=task_id,
+        filters={
+            "market_temp_levels": selected_temp_levels,
+            "markets": selected_markets,
+            "exchanges": selected_exchanges,
+            "year": year,
+        },
+        items=items,
+    )
+
+
+@router.get("/tasks/{task_id}/best-options", response_model=BacktestBestOptionsResponse)
+def api_get_best_options(task_id: str, db: Session = Depends(get_db)):
+    """
+    自动搜索最优选项：
+    - best_win_rate：胜率最高
+    - best_total_return：总收益最高
+    条件空间：温度/交易所/板块分别取“不过滤或某一个具体值（含空板块）”的交叉组合。
+    """
+    task = db.query(BacktestTask).filter(BacktestTask.task_id == task_id).first()
+    if task is None:
+        raise HTTPException(status_code=404, detail={"code": "TASK_NOT_FOUND", "message": "回测任务不存在"})
+
+    all_rows = db.query(BacktestTradeModel).filter(BacktestTradeModel.task_id == task_id).all()
+    if not all_rows:
+        empty_metrics = _calculate_metrics_from_rows([])
+        empty_item = BacktestBestOptionItem(
+            filters={"market_temp_levels": [], "markets": [], "exchanges": []},
+            metrics=empty_metrics,
+        )
+        return BacktestBestOptionsResponse(
+            task_id=task_id,
+            best_win_rate=empty_item,
+            best_total_return=empty_item,
+        )
+
+    # 最佳胜率增加最小样本约束：候选组合的已平仓笔数必须 >= 总已平仓笔数的 1/10
+    all_closed_total = len([r for r in all_rows if r.trade_type == "closed" and r.return_rate is not None])
+    min_trades_for_best_win_rate = max(1, math.ceil(all_closed_total / 10)) if all_closed_total > 0 else 1
+
+    temp_levels = sorted({r.market_temp_level for r in all_rows if r.market_temp_level})
+    exchanges = sorted({r.exchange for r in all_rows if r.exchange})
+    markets_raw = {r.market for r in all_rows}
+    markets = sorted({m for m in markets_raw if m})
+    has_empty_market = (None in markets_raw) or ("" in markets_raw)
+    empty_token = "__EMPTY__"
+
+    temp_choices: list[str | None] = [None, *temp_levels]
+    exchange_choices: list[str | None] = [None, *exchanges]
+    market_choices: list[str | None] = [None, *markets]
+    if has_empty_market:
+        market_choices.append(empty_token)
+
+    best_win_filters: dict | None = None
+    best_win_metrics: BacktestFilteredMetrics | None = None
+    best_profit_filters: dict | None = None
+    best_profit_metrics: BacktestFilteredMetrics | None = None
+
+    for t in temp_choices:
+        for e in exchange_choices:
+            for m in market_choices:
+                filtered = all_rows
+                if t is not None:
+                    filtered = [r for r in filtered if r.market_temp_level == t]
+                if e is not None:
+                    filtered = [r for r in filtered if r.exchange == e]
+                if m is not None:
+                    if m == empty_token:
+                        filtered = [r for r in filtered if (r.market is None or r.market == "")]
+                    else:
+                        filtered = [r for r in filtered if r.market == m]
+
+                metrics = _calculate_metrics_from_rows(filtered)
+                if metrics.total_trades <= 0:
+                    continue
+
+                filters = {
+                    "market_temp_levels": [t] if t is not None else [],
+                    "exchanges": [e] if e is not None else [],
+                    "markets": [m] if m is not None else [],
+                }
+
+                # 仅在样本量达标时参与“最佳胜率”评选，降低小样本偶然性
+                if metrics.total_trades >= min_trades_for_best_win_rate:
+                    if best_win_metrics is None:
+                        best_win_metrics = metrics
+                        best_win_filters = filters
+                    else:
+                        if (
+                            metrics.win_rate > best_win_metrics.win_rate
+                            or (
+                                metrics.win_rate == best_win_metrics.win_rate
+                                and metrics.total_return > best_win_metrics.total_return
+                            )
+                            or (
+                                metrics.win_rate == best_win_metrics.win_rate
+                                and metrics.total_return == best_win_metrics.total_return
+                                and metrics.total_trades > best_win_metrics.total_trades
+                            )
+                        ):
+                            best_win_metrics = metrics
+                            best_win_filters = filters
+
+                if best_profit_metrics is None:
+                    best_profit_metrics = metrics
+                    best_profit_filters = filters
+                else:
+                    if (
+                        metrics.total_return > best_profit_metrics.total_return
+                        or (
+                            metrics.total_return == best_profit_metrics.total_return
+                            and metrics.win_rate > best_profit_metrics.win_rate
+                        )
+                        or (
+                            metrics.total_return == best_profit_metrics.total_return
+                            and metrics.win_rate == best_profit_metrics.win_rate
+                            and metrics.total_trades > best_profit_metrics.total_trades
+                        )
+                    ):
+                        best_profit_metrics = metrics
+                        best_profit_filters = filters
+
+    if best_profit_metrics is None:
+        empty_metrics = _calculate_metrics_from_rows([])
+        empty_item = BacktestBestOptionItem(
+            filters={"market_temp_levels": [], "markets": [], "exchanges": []},
+            metrics=empty_metrics,
+        )
+        return BacktestBestOptionsResponse(
+            task_id=task_id,
+            best_win_rate=empty_item,
+            best_total_return=empty_item,
+        )
+
+    # 若没有任何组合满足“最佳胜率最小样本约束”，回退为“全量不过滤”结果
+    if best_win_metrics is None:
+        fallback_metrics = _calculate_metrics_from_rows(all_rows)
+        best_win_metrics = fallback_metrics
+        best_win_filters = {"market_temp_levels": [], "markets": [], "exchanges": []}
+
+    return BacktestBestOptionsResponse(
+        task_id=task_id,
+        best_win_rate=BacktestBestOptionItem(filters=best_win_filters or {}, metrics=best_win_metrics),
+        best_total_return=BacktestBestOptionItem(filters=best_profit_filters or {}, metrics=best_profit_metrics),
+    )
 
 
 @router.get("/data-range", response_model=DataRangeResponse)
