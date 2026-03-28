@@ -2,7 +2,7 @@ openapi: 3.0.3
 info:
   title: 大盘温度接口契约
   version: 1.0.0
-  description: 首页大盘温度展示、趋势查询、口径说明与手动重算接口
+  description: 大盘温度展示页、趋势与区间历史查询、口径说明与手动重算接口
 servers:
   - url: /api
 paths:
@@ -48,6 +48,36 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+
+  /market-temperature/range:
+    get:
+      summary: 按自然日区间查询历史温度序列
+      parameters:
+        - in: query
+          name: start_date
+          required: true
+          schema:
+            type: string
+            format: date
+          description: 区间起始日（含）
+        - in: query
+          name: end_date
+          required: true
+          schema:
+            type: string
+            format: date
+          description: 区间结束日（含）
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RangeResponse'
+        '404':
+          description: 该区间内无数据
+        '422':
+          description: 参数校验失败（如区间超过 3 年或起止颠倒）
 
   /market-temperature/explain:
     get:
@@ -170,6 +200,73 @@ components:
                 type: string
             required: [trade_date, temperature_score, temperature_level, trend_flag]
       required: [formula_version, points]
+
+    RangeResponse:
+      type: object
+      properties:
+        formula_version:
+          type: string
+        start_date:
+          type: string
+          format: date
+          description: 区间内首条有数据的交易日
+        end_date:
+          type: string
+          format: date
+          description: 区间内末条有数据的交易日
+        trade_day_count:
+          type: integer
+        level_styles:
+          type: array
+          items:
+            $ref: '#/components/schemas/LevelStyle'
+        snapshot:
+          type: object
+          description: 区间内最后一条交易日的结果（与 /latest 主区字段一致；配色用顶层 level_styles）
+          properties:
+            trade_date:
+              type: string
+              format: date
+            temperature_score:
+              type: number
+              format: float
+            temperature_level:
+              type: string
+            trend_flag:
+              type: string
+            strategy_hint:
+              type: string
+            updated_at:
+              type: string
+              format: date-time
+            data_status:
+              type: string
+              enum: [normal, stale, failed]
+          required:
+            - trade_date
+            - temperature_score
+            - temperature_level
+            - trend_flag
+            - strategy_hint
+            - updated_at
+            - data_status
+        points:
+          type: array
+          items:
+            type: object
+            properties:
+              trade_date:
+                type: string
+                format: date
+              temperature_score:
+                type: number
+                format: float
+              temperature_level:
+                type: string
+              trend_flag:
+                type: string
+            required: [trade_date, temperature_score, temperature_level, trend_flag]
+      required: [formula_version, start_date, end_date, trade_day_count, level_styles, snapshot, points]
 
     ExplainResponse:
       type: object

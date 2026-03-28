@@ -16,6 +16,11 @@ const router = createRouter({
       meta: { requiresAuth: true },
       children: [
         { path: '', name: 'home', component: () => import('@/views/HomeView.vue') },
+        {
+          path: 'market-temperature',
+          name: 'market-temperature',
+          component: () => import('@/views/MarketTemperatureView.vue'),
+        },
         { path: 'stock-screening', name: 'stock-screening', component: () => import('@/views/StockScreeningView.vue') },
         { path: 'stock-basic', name: 'stock-basic', component: () => import('@/views/StockBasicView.vue') },
         { path: 'sync-jobs', name: 'sync-jobs', component: () => import('@/views/SyncJobMonitorView.vue') },

@@ -23,7 +23,7 @@
         <div class="hint">{{ latest.strategy_hint }}</div>
       </el-tooltip>
       <div class="trend-block">
-        <div class="trend-title">近 {{ trend.length || 20 }} 个交易日</div>
+        <div class="trend-title">{{ trendTitle }}</div>
         <div class="trend-pills">
           <el-tooltip
             v-for="item in trend"
@@ -52,22 +52,26 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
-import {
-  getLatestMarketTemperature,
-  getMarketTemperatureExplain,
-  getMarketTemperatureTrend,
-  type MarketTemperatureLatest,
-  type MarketTemperatureTrendPoint,
-} from '@/api/marketTemperature'
+import { ref } from 'vue'
+import type { MarketTemperatureLatest, MarketTemperatureTrendPoint } from '@/api/marketTemperature'
 import MarketTemperatureExplainModal from '@/components/MarketTemperatureExplainModal.vue'
 
-const loading = ref(true)
-const error = ref('')
-const latest = ref<MarketTemperatureLatest | null>(null)
-const trend = ref<MarketTemperatureTrendPoint[]>([])
+const props = withDefaults(
+  defineProps<{
+    loading: boolean
+    error: string
+    latest: MarketTemperatureLatest | null
+    trend: MarketTemperatureTrendPoint[]
+    trendTitle: string
+    explain: unknown
+  }>(),
+  {
+    error: '',
+    trendTitle: '近 20 个交易日',
+  },
+)
+
 const showExplain = ref(false)
-const explain = ref<any>(null)
 
 function formatDt(iso: string) {
   try {
@@ -82,12 +86,11 @@ function isHexColor(token: string) {
 }
 
 function levelHex(level: string): string | null {
-  const item = latest.value?.level_styles.find((s) => s.level_name === level)
+  const item = props.latest?.level_styles.find((s) => s.level_name === level)
   if (item && isHexColor(item.visual_token)) return item.visual_token.trim()
   return null
 }
 
-/** 标题行「档位 + 分数」共用颜色 */
 function heroAccentColor(level: string) {
   return levelHex(level) || '#1e3a5f'
 }
@@ -109,20 +112,6 @@ function trendPillStyle(level: string) {
     borderColor: hex,
   }
 }
-
-onMounted(async () => {
-  loading.value = true
-  try {
-    latest.value = await getLatestMarketTemperature()
-    const trendData = await getMarketTemperatureTrend(20)
-    trend.value = trendData.points
-    explain.value = await getMarketTemperatureExplain()
-  } catch (e: any) {
-    error.value = e?.response?.data?.detail || e?.message || '大盘温度加载失败'
-  } finally {
-    loading.value = false
-  }
-})
 </script>
 
 <style scoped>
@@ -162,6 +151,9 @@ onMounted(async () => {
   flex-wrap: wrap;
   gap: 8px 10px;
   align-items: center;
+  max-height: min(520px, 70vh);
+  overflow-y: auto;
+  padding-right: 4px;
 }
 .trend-pill {
   cursor: default;

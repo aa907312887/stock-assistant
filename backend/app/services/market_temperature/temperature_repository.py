@@ -110,3 +110,22 @@ def list_trend(db: Session, days: int = 20, formula_version: str = FORMULA_VERSI
         .all()
     )
     return list(reversed(rows))
+
+
+def list_by_date_range(
+    db: Session,
+    start_date: date,
+    end_date: date,
+    formula_version: str = FORMULA_VERSION,
+) -> list[MarketTemperatureDaily]:
+    """按交易日期区间返回温度序列（升序），含起止日当日若有记录。"""
+    return (
+        db.query(MarketTemperatureDaily)
+        .filter(
+            MarketTemperatureDaily.formula_version == formula_version,
+            MarketTemperatureDaily.trade_date >= start_date,
+            MarketTemperatureDaily.trade_date <= end_date,
+        )
+        .order_by(MarketTemperatureDaily.trade_date.asc())
+        .all()
+    )

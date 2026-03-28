@@ -20,7 +20,7 @@
       </section>
 
       <h4 class="section-title">五档说明与操作建议</h4>
-      <p class="section-hint">以下为各档位名称、分数区间及倾向操作，与首页「近 N 个交易日」方块一致：上行档位名、下行温度分。</p>
+      <p class="section-hint">以下为各档位名称、分数区间及倾向操作，与本页趋势区方块一致：上行档位名、下行温度分。</p>
       <ul class="levels-explain">
         <li v-for="l in explain.levels" :key="l.level_name">
           <span v-if="l.color" class="swatch" :style="{ backgroundColor: l.color }" />

@@ -18,6 +18,7 @@
           <el-menu-item index="/">首页</el-menu-item>
           <el-sub-menu index="stock-info">
             <template #title>股票信息</template>
+            <el-menu-item index="/market-temperature">大盘温度</el-menu-item>
             <el-menu-item index="/stock-screening">综合选股</el-menu-item>
             <el-menu-item index="/stock-basic">股票基本信息</el-menu-item>
             <el-menu-item index="/sync-jobs">同步批次</el-menu-item>
