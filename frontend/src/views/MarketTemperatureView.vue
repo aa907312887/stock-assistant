@@ -15,18 +15,31 @@
     </div>
 
     <el-card class="toolbar" shadow="never">
-      <span class="toolbar-label">历史区间</span>
-      <el-date-picker
-        v-model="dateRange"
-        type="daterange"
-        range-separator="至"
-        start-placeholder="开始日期"
-        end-placeholder="结束日期"
-        value-format="YYYY-MM-DD"
-        :disabled-date="disabledFuture"
-      />
-      <el-button type="primary" :loading="rangeLoading" @click="applyRange">查询</el-button>
-      <el-button @click="resetDefault">恢复默认</el-button>
+      <div class="toolbar-inner">
+        <span class="toolbar-label">历史区间</span>
+        <div class="date-field">
+          <span class="field-label">开始日期</span>
+          <el-date-picker
+            v-model="startDate"
+            type="date"
+            placeholder="选择开始日期"
+            value-format="YYYY-MM-DD"
+            :disabled-date="disabledFuture"
+          />
+        </div>
+        <div class="date-field">
+          <span class="field-label">结束日期</span>
+          <el-date-picker
+            v-model="endDate"
+            type="date"
+            placeholder="选择结束日期"
+            value-format="YYYY-MM-DD"
+            :disabled-date="disabledFuture"
+          />
+        </div>
+        <el-button type="primary" :loading="rangeLoading" @click="applyRange">查询</el-button>
+        <el-button @click="resetDefault">恢复默认</el-button>
+      </div>
     </el-card>
 
     <MarketTemperatureCard
@@ -71,7 +84,9 @@ const rangeTrend = ref<MarketTemperatureTrendPoint[]>([])
 
 const trendTitle = ref('近 20 个交易日')
 const explain = ref<unknown>(null)
-const dateRange = ref<[string, string] | null>(null)
+/** 开始 / 结束各自独立选择，互不绑定为 range 组件 */
+const startDate = ref<string | null>(null)
+const endDate = ref<string | null>(null)
 
 const displayLatest = computed(() => (mode.value === 'range' ? rangeLatest.value : baselineLatest.value))
 const displayTrend = computed(() => (mode.value === 'range' ? rangeTrend.value : baselineTrend.value))
@@ -122,11 +137,16 @@ async function loadDefault() {
 }
 
 async function applyRange() {
-  if (!dateRange.value || dateRange.value.length !== 2) {
-    ElMessage.warning('请选择开始与结束日期')
+  if (!startDate.value || !endDate.value) {
+    ElMessage.warning('请选择开始日期与结束日期')
     return
   }
-  const [start, end] = dateRange.value
+  if (startDate.value > endDate.value) {
+    ElMessage.warning('开始日期不能晚于结束日期')
+    return
+  }
+  const start = startDate.value
+  const end = endDate.value
   rangeLoading.value = true
   error.value = ''
   try {
@@ -150,7 +170,8 @@ async function applyRange() {
 }
 
 async function resetDefault() {
-  dateRange.value = null
+  startDate.value = null
+  endDate.value = null
   await loadDefault()
 }
 
@@ -187,14 +208,27 @@ onMounted(() => {
 }
 .toolbar {
   margin-bottom: 16px;
+}
+.toolbar-inner {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 12px;
+  gap: 14px 16px;
 }
 .toolbar-label {
   font-size: 14px;
   color: #606266;
+  margin-right: 4px;
+}
+.date-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.field-label {
+  font-size: 14px;
+  color: #606266;
+  white-space: nowrap;
 }
 .temp-card-wrap {
   max-width: 100%;
