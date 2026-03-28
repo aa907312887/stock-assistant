@@ -19,7 +19,16 @@ TUSHARE_CLIENT_ALERT = "[Tushare客户端告警]"
 
 MAX_RETRIES = 3
 RETRY_INTERVAL_SEC = 5
-RATE_PAUSE_SEC = 0.06
+
+
+def _rate_pause() -> None:
+    """每次发起 Tushare 请求前休眠，控制近似 QPS，避免触发限流。"""
+    try:
+        sec = float(settings.tushare_rate_pause_sec)
+    except (TypeError, ValueError):
+        sec = 0.12
+    if sec > 0:
+        time.sleep(sec)
 
 _pro_lock = Lock()
 _pro_api: Any = None
@@ -78,6 +87,7 @@ def get_stock_list() -> list[dict[str, Any]]:
     last_err: Exception | None = None
     for attempt in range(MAX_RETRIES):
         try:
+            _rate_pause()
             df = pro.stock_basic(
                 exchange="",
                 list_status="L",
@@ -130,6 +140,7 @@ def get_daily_by_trade_date(trade_date: date) -> dict[str, dict[str, Any]]:
     last_err: Exception | None = None
     for attempt in range(MAX_RETRIES):
         try:
+            _rate_pause()
             df = pro.daily(trade_date=trade_date.strftime("%Y%m%d"))
             rows = _df_to_records(df)
             return {str(r["ts_code"]): r for r in rows if r.get("ts_code")}
@@ -201,6 +212,7 @@ def get_daily_basic_by_trade_date(trade_date: date) -> dict[str, dict[str, Any]]
     last_err: Exception | None = None
     for attempt in range(MAX_RETRIES):
         try:
+            _rate_pause()
             df = pro.daily_basic(
                 trade_date=trade_date.strftime("%Y%m%d"),
                 fields="ts_code,trade_date,turnover_rate,volume_ratio,pe,pe_ttm,pb,ps,dv_ratio,dv_ttm,total_mv,circ_mv",
@@ -221,8 +233,7 @@ def get_weekly_bars(ts_code: str, *, start: str | None = None, end: str | None =
     last_err: Exception | None = None
     for attempt in range(MAX_RETRIES):
         try:
-            if RATE_PAUSE_SEC > 0:
-                time.sleep(RATE_PAUSE_SEC)
+            _rate_pause()
             df = pro.weekly(
                 ts_code=ts_code,
                 start_date=start or "20000101",
@@ -250,8 +261,7 @@ def get_stk_weekly_monthly_by_trade_date(trade_date: date, freq: str) -> list[di
     last_err: Exception | None = None
     for attempt in range(MAX_RETRIES):
         try:
-            if RATE_PAUSE_SEC > 0:
-                time.sleep(RATE_PAUSE_SEC)
+            _rate_pause()
             df = pro.stk_weekly_monthly(trade_date=trade_date.strftime("%Y%m%d"), freq=freq)
             rows = _df_to_records(df)
             if len(rows) >= 6000:
@@ -303,8 +313,7 @@ def get_stk_weekly_monthly_latest_by_anchor(anchor_date: date, freq: str) -> lis
         last_err: Exception | None = None
         for attempt in range(MAX_RETRIES):
             try:
-                if RATE_PAUSE_SEC > 0:
-                    time.sleep(RATE_PAUSE_SEC)
+                _rate_pause()
                 df = pro.stk_weekly_monthly(
                     start_date=start_d.strftime("%Y%m%d"),
                     end_date=end_d.strftime("%Y%m%d"),
@@ -361,8 +370,7 @@ def get_monthly_bars(ts_code: str, *, start: str | None = None, end: str | None 
     last_err: Exception | None = None
     for attempt in range(MAX_RETRIES):
         try:
-            if RATE_PAUSE_SEC > 0:
-                time.sleep(RATE_PAUSE_SEC)
+            _rate_pause()
             df = pro.monthly(
                 ts_code=ts_code,
                 start_date=start or "20000101",
@@ -391,8 +399,7 @@ def get_fin_income(
     last_err: Exception | None = None
     for attempt in range(MAX_RETRIES):
         try:
-            if RATE_PAUSE_SEC > 0:
-                time.sleep(RATE_PAUSE_SEC)
+            _rate_pause()
             df = pro.income(
                 ts_code=ts_code,
                 start_date=start or "20000101",
@@ -413,6 +420,7 @@ def get_open_trade_dates(*, start: str, end: str, exchange: str = "SSE") -> list
     last_err: Exception | None = None
     for attempt in range(MAX_RETRIES):
         try:
+            _rate_pause()
             df = pro.trade_cal(
                 exchange=exchange,
                 start_date=start,
@@ -454,6 +462,7 @@ def get_index_daily_range(ts_code: str, *, start_date: date, end_date: date) -> 
     last_err: Exception | None = None
     for attempt in range(MAX_RETRIES):
         try:
+            _rate_pause()
             df = pro.index_daily(
                 ts_code=ts_code,
                 start_date=start_date.strftime("%Y%m%d"),

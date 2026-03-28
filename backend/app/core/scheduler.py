@@ -49,6 +49,19 @@ def _job_sync_stock() -> None:
         result = execute_pending_auto_sync(db, today)
         if result.get("skipped"):
             logger.info("定时同步无需执行：%s", result.get("reason", "skipped"))
+            # 无 pending 子任务时不会走 sync_task_runner 末尾的大盘温度联动，在此补一次
+            try:
+                run_incremental_temperature_job(db)
+                logger.info("大盘温度增量同步完成（无股票子任务分支）")
+            except Exception as te:
+                log_scheduled_job_failure(
+                    logger,
+                    job_id=_JOB_MARKET_TEMP,
+                    scheduler_entry=_ENTRY_SYNC,
+                    business_callable="run_incremental_temperature_job",
+                    external_api=guess_tushare_api_from_exception(te),
+                    exc=te,
+                )
         else:
             logger.info(
                 "定时同步完成 batch=%s status=%s",

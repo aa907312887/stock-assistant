@@ -13,12 +13,46 @@ from app.services.stock_basic_sync_service import run_sync_basic_only
 from app.services.stock_daily_bar_sync_service import sync_daily_bars
 from app.services.stock_financial_sync_service import sync_financial_reports
 from app.services.stock_monthly_bar_sync_service import sync_monthly_bars
-from app.services.stock_indicator_fill_service import fill_after_sync
+from app.services.stock_indicator_fill_service import (
+    fill_after_sync,
+    fill_indicators_for_timeframe,
+)
 from app.services.stock_sync_utils import get_month_last_open_date, get_week_last_open_date
 from app.services.stock_weekly_bar_sync_service import sync_weekly_bars
+from app.services.market_temperature.temperature_job_service import (
+    rebuild_temperature_range,
+    run_incremental_temperature_job,
+)
 from app.services.tushare_client import get_latest_open_trade_date, get_open_trade_dates
 
 logger = logging.getLogger(__name__)
+
+
+def _fill_market_temperature_followup_safe(
+    db: Session,
+    *,
+    mode: str,
+    modules: list[str],
+    start_date: date | None,
+    end_date: date | None,
+) -> None:
+    """行情与指标写入后联动大盘温度（指数日线 + 公式重算）；失败仅记日志。"""
+    if "daily" not in modules:
+        return
+    try:
+        if mode == "backfill" and start_date is not None and end_date is not None:
+            rebuild_temperature_range(
+                db, start_date, end_date, force_refresh_source=True
+            )
+        elif mode == "incremental":
+            run_incremental_temperature_job(db)
+    except Exception:
+        logger.exception(
+            "大盘温度联动失败（股票行情已写入）mode=%s start=%s end=%s",
+            mode,
+            start_date,
+            end_date,
+        )
 
 
 def _fill_indicators_safe_orchestrator(
@@ -27,12 +61,34 @@ def _fill_indicators_safe_orchestrator(
     *,
     anchor_date: date,
     limit: int | None,
+    sync_mode: str = "incremental",
+    range_start: date | None = None,
+    range_end: date | None = None,
 ) -> None:
-    """K 线写入成功后填充指标；失败仅记日志。"""
+    """K 线写入成功后填充指标；失败仅记日志。
+
+    - incremental：仅重算锚点日前最近若干根（定时/单日增量）。
+    - backfill：按 [range_start, range_end] 重算区间内各行（带历史前缀），与长区间行情回灌配套。
+    """
     try:
-        fill_after_sync(db, timeframe, anchor_date=anchor_date, limit=limit)  # type: ignore[arg-type]
+        if sync_mode == "backfill" and range_start is not None and range_end is not None:
+            fill_indicators_for_timeframe(
+                db,
+                timeframe,  # type: ignore[arg-type]
+                mode="backfill",
+                start_date=range_start,
+                end_date=range_end,
+                limit=limit,
+            )
+        else:
+            fill_after_sync(db, timeframe, anchor_date=anchor_date, limit=limit)  # type: ignore[arg-type]
     except Exception:
-        logger.exception("指标填充失败（行情模块已成功）timeframe=%s anchor=%s", timeframe, anchor_date)
+        logger.exception(
+            "指标填充失败（行情模块已成功）timeframe=%s anchor=%s mode=%s",
+            timeframe,
+            anchor_date,
+            sync_mode,
+        )
 
 # 未显式指定 modules 时的默认：与定时任务 sync_task（AUTO_TASK_TYPES）一致——
 # basic → daily → weekly → monthly；各周期行情写入成功后同编排内会填充该周期均线/MACD。
@@ -65,6 +121,20 @@ def run_stock_sync(
     db.add(job)
     db.commit()
     db.refresh(job)
+    logger.info(
+        "股票同步开始 batch_id=%s mode=%s modules=%s trade_date=%s start=%s end=%s",
+        batch_id,
+        mode,
+        modules,
+        trade_date,
+        start_date,
+        end_date,
+    )
+    print(
+        f"[sync] 已开始 batch_id={batch_id} mode={mode} modules={modules} "
+        f"周/月线回灌时每 5～10 批会打印进度，请勿误以为卡住。",
+        flush=True,
+    )
 
     def _persist_progress() -> None:
         """每完成一个模块即落库，避免任务长时间 running 时页面无任何中间状态。"""
@@ -135,7 +205,13 @@ def run_stock_sync(
             _persist_progress()
             if module_status.get("daily") == "success":
                 _fill_indicators_safe_orchestrator(
-                    db, "daily", anchor_date=end_date or trade_date, limit=limit
+                    db,
+                    "daily",
+                    anchor_date=end_date or trade_date,
+                    limit=limit,
+                    sync_mode=mode,
+                    range_start=start_date,
+                    range_end=end_date,
                 )
 
         if "weekly" in modules:
@@ -158,7 +234,13 @@ def run_stock_sync(
             if module_status.get("weekly") == "success":
                 weekly_anchor = get_week_last_open_date(end_date or trade_date) or (end_date or trade_date)
                 _fill_indicators_safe_orchestrator(
-                    db, "weekly", anchor_date=weekly_anchor, limit=limit
+                    db,
+                    "weekly",
+                    anchor_date=weekly_anchor,
+                    limit=limit,
+                    sync_mode=mode,
+                    range_start=start_date,
+                    range_end=end_date,
                 )
 
         if "monthly" in modules:
@@ -181,7 +263,13 @@ def run_stock_sync(
             if module_status.get("monthly") == "success":
                 monthly_anchor = get_month_last_open_date(end_date or trade_date) or (end_date or trade_date)
                 _fill_indicators_safe_orchestrator(
-                    db, "monthly", anchor_date=monthly_anchor, limit=limit
+                    db,
+                    "monthly",
+                    anchor_date=monthly_anchor,
+                    limit=limit,
+                    sync_mode=mode,
+                    range_start=start_date,
+                    range_end=end_date,
                 )
 
         if "financial" in modules:
@@ -203,6 +291,14 @@ def run_stock_sync(
             if failed_stock_count > 0:
                 errors.append(f"财报模块有 {failed_stock_count} 只股票接口拉取失败（详见日志）")
             _persist_progress()
+
+        _fill_market_temperature_followup_safe(
+            db,
+            mode=mode,
+            modules=modules,
+            start_date=start_date,
+            end_date=end_date,
+        )
 
         status = "success"
         if any(value == "failed" for value in module_status.values()) or failed_stock_count > 0:

@@ -23,7 +23,7 @@ from app.services.tushare_client import (
 
 logger = logging.getLogger(__name__)
 
-# 回灌时两次批量请求之间的额外间隔，配合 tushare_client.RATE_PAUSE_SEC 降低触发限流概率
+# 回灌时两次批量请求之间的额外间隔，配合 tushare_client._rate_pause 降低触发限流概率
 STK_WM_BACKFILL_EXTRA_PAUSE_SEC = 0.35
 
 
@@ -168,13 +168,27 @@ def sync_weekly_bars_backfill_batch(
     db: Session, *, start_date: date, end_date: date, batch_id: str
 ) -> dict[str, int]:
     """按自然周枚举每周最后一个开市日，逐日批量拉取，避免逐标的循环。"""
+    logger.info(
+        "周线回灌：正在枚举周界交易日（一次 trade_cal + 本地分组）start=%s end=%s",
+        start_date,
+        end_date,
+    )
     batch_dates = enumerate_week_batch_trade_dates(start_date, end_date)
+    n = len(batch_dates)
+    logger.info("周线回灌：共 %s 个周界日，开始逐批请求 Tushare stk_weekly_monthly(freq=week)", n)
     total = 0
-    for td in batch_dates:
+    for i, td in enumerate(batch_dates, start=1):
         rows = get_stk_weekly_monthly_by_trade_date(td, "week")
         total += _upsert_weekly_rows(db, rows, batch_id)
         db.commit()
         time.sleep(STK_WM_BACKFILL_EXTRA_PAUSE_SEC)
+        if i == 1 or i == n or i % 10 == 0:
+            msg = (
+                f"[周线回灌] {i}/{n} trade_date={td} "
+                f"本批行数={len(rows)} 累计写入={total} batch_id={batch_id}"
+            )
+            logger.info(msg)
+            print(msg, flush=True)
     logger.info(
         "周线回灌完成 start=%s end=%s batch_dates=%s total_rows=%s",
         start_date,

@@ -22,14 +22,21 @@ def main() -> None:
             "basic + daily + weekly + monthly（各周期写入后会填充该周期均线/MACD）。"
         ),
         epilog=(
-            "历史回灌请用 `--preset three-year` 或 `--mode backfill` + 日期区间。"
+            "历史回灌：`--preset three-year`（约近三年）、`--preset since-2019`（2019-01-01 至今日），"
+            "或 `--mode backfill` + `--start-date` / `--end-date`。"
+            "同区间重复执行时，行情按唯一键 upsert，指标按区间重算覆盖，可安全重跑。"
             "仅跑 `fill_stock_indicators` 不会拉取任何 K 线。"
             "若只想同步部分模块，可传 `--modules basic daily` 等覆盖默认。"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument("--mode", choices=["incremental", "backfill"], default="incremental")
-    parser.add_argument("--preset", choices=["none", "three-year"], default="none", help="three-year：回灌约近三年日/周/月线（需 Tushare 积分）")
+    parser.add_argument(
+        "--preset",
+        choices=["none", "three-year", "since-2019"],
+        default="none",
+        help="three-year：回灌约近三年；since-2019：2019-01-01 至今日（需 Tushare 积分与较长耗时）",
+    )
     parser.add_argument("--start-date", dest="start_date")
     parser.add_argument("--end-date", dest="end_date")
     parser.add_argument("--modules", nargs="*", default=None)
@@ -59,8 +66,18 @@ def main() -> None:
         if modules is None:
             modules = ["basic", "daily", "weekly", "monthly"]
 
+    if args.preset == "since-2019":
+        mode = "backfill"
+        end_date = date.today()
+        start_date = date(2019, 1, 1)
+        if modules is None:
+            modules = ["basic", "daily", "weekly", "monthly"]
+
     if mode == "backfill" and (start_date is None or end_date is None):
-        print("backfill 模式必须提供 --start-date 和 --end-date，或使用 --preset three-year", file=sys.stderr)
+        print(
+            "backfill 模式必须提供 --start-date 和 --end-date，或使用 --preset three-year / since-2019",
+            file=sys.stderr,
+        )
         sys.exit(1)
 
     limit = None

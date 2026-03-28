@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import calendar
+import logging
 from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
 
 from app.services.tushare_client import get_open_trade_dates
+
+logger = logging.getLogger(__name__)
 
 
 def safe_decimal(value: Any) -> Decimal | None:
@@ -79,6 +82,7 @@ def enumerate_month_batch_trade_dates(start: date, end: date) -> list[date]:
     """区间内每个自然月的最后一个开市日。"""
     out: list[date] = []
     y, m = start.year, start.month
+    months_done = 0
     while date(y, m, 1) <= end:
         last_cal = date(y, m, calendar.monthrange(y, m)[1])
         mo = get_open_trade_dates(
@@ -89,6 +93,11 @@ def enumerate_month_batch_trade_dates(start: date, end: date) -> list[date]:
             last_open = mo[-1]
             if start <= last_open <= end:
                 out.append(last_open)
+        months_done += 1
+        if months_done == 1 or months_done % 6 == 0:
+            msg = f"[月线枚举] 已处理 {months_done} 个月份日历请求，当前 {y}-{m:02d}"
+            logger.info(msg)
+            print(msg, flush=True)
         if m == 12:
             y, m = y + 1, 1
         else:

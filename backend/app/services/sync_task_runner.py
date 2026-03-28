@@ -16,6 +16,7 @@ from app.services.stock_weekly_bar_sync_service import sync_weekly_bars_batch
 from app.services.stock_indicator_fill_service import fill_after_sync
 from app.services.stock_sync_utils import get_month_last_open_date, get_week_last_open_date
 from app.services.stock_sync_orchestrator import _build_error_message
+from app.services.market_temperature.temperature_job_service import run_incremental_temperature_job
 
 logger = logging.getLogger(__name__)
 
@@ -184,6 +185,12 @@ def execute_pending_auto_sync(db: Session, trade_date: date, *, limit: int | Non
     err_parts = [f"[{t.task_type}] {t.error_message or '未知错误'}" for t in failed_tasks]
     job.error_message = _build_error_message(err_parts, module_status, 0, status)
     db.commit()
+
+    # 与日线增量一致：子任务完成后联动大盘温度（指数行情 + 公式重算）；失败不推翻 sync_job_run 状态
+    try:
+        run_incremental_temperature_job(db)
+    except Exception:
+        logger.exception("大盘温度联动失败（股票子任务已落库）trade_date=%s", trade_date)
 
     return {
         "skipped": False,

@@ -165,13 +165,27 @@ def sync_monthly_bars_backfill_batch(
     db: Session, *, start_date: date, end_date: date, batch_id: str
 ) -> dict[str, int]:
     """按自然月枚举每月最后一个开市日，逐日批量拉取。"""
+    logger.info(
+        "月线回灌：正在枚举各月最后开市日（每月一次 trade_cal，耗时可到数分钟）start=%s end=%s",
+        start_date,
+        end_date,
+    )
     batch_dates = enumerate_month_batch_trade_dates(start_date, end_date)
+    n = len(batch_dates)
+    logger.info("月线回灌：共 %s 个月末批次，开始逐批请求 Tushare stk_weekly_monthly(freq=month)", n)
     total = 0
-    for td in batch_dates:
+    for i, td in enumerate(batch_dates, start=1):
         rows = get_stk_weekly_monthly_by_trade_date(td, "month")
         total += _upsert_monthly_rows(db, rows, batch_id)
         db.commit()
         time.sleep(STK_WM_BACKFILL_EXTRA_PAUSE_SEC)
+        if i == 1 or i == n or i % 5 == 0:
+            msg = (
+                f"[月线回灌] {i}/{n} trade_date={td} "
+                f"本批行数={len(rows)} 累计写入={total} batch_id={batch_id}"
+            )
+            logger.info(msg)
+            print(msg, flush=True)
     logger.info(
         "月线回灌完成 start=%s end=%s batch_dates=%s total_rows=%s",
         start_date,

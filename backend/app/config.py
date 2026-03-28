@@ -34,6 +34,9 @@ class Settings(BaseSettings):
     # 手动触发同步时的鉴权（Header X-Admin-Secret 需与此一致）
     admin_secret: str = Field(default="", validation_alias="ADMIN_SECRET")
 
+    # 每次调用 Tushare Pro 前的最小间隔（秒），降低触发限流概率；可按账号额度调大（如 0.2）
+    tushare_rate_pause_sec: float = Field(default=0.12, validation_alias="TUSHARE_RATE_PAUSE_SEC")
+
     @model_validator(mode="after")
     def _tushare_token_from_env_file_only(self) -> Self:
         """Tushare Token 只认 backend/.env 中的 TUSHARE_TOKEN，忽略 export 与 tushare 的 ~/tk.csv。"""
