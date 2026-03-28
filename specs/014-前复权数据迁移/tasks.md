@@ -66,7 +66,7 @@
 
 - [x] T012 [US2] 新增 `backend/scripts/truncate_for_qfq_migration.sql`：按 `specs/014-前复权数据迁移/data-model.md` 顺序对 `stock_daily_bar`、`stock_weekly_bar`、`stock_monthly_bar`、`stock_basic`、`market_temperature_daily`、`market_temperature_factor_daily`、`market_index_daily_quote`、`strategy_selection_item`、`strategy_signal_event`、`strategy_execution_snapshot`、`sync_job_run`、`sync_task` 等执行 `TRUNCATE` 或 `DELETE`（**禁止** `DROP TABLE`）；外键若有则调整顺序或临时 `SET FOREIGN_KEY_CHECKS`（MySQL）并注释风险
 - [x] T013 [US2] 新增或扩充 `specs/014-前复权数据迁移/migration-runbook.md`：逐步执行顺序、回滚说明（再跑脚本/从备份恢复）、清空后 `POST /api/admin/stock-sync` 与 `POST /api/admin/stock-indicators` 的示例 JSON（与 `quickstart.md` 交叉引用），满足 FR-006
-- [ ] T014 [US2] 在维护窗口执行：备份 → 运行 `truncate_for_qfq_migration.sql` → 使用 `POST /api/admin/stock-sync`（`mode=backfill` 等）全量回灌 `basic`+日/周/月 → 触发指标与温度重算；记录 `batch_id` 与耗时（**运维执行，runbook §5 留空**）
+- [ ] T014 [US2] 在维护窗口执行：备份 → 运行 `truncate_for_qfq_migration.sql` → 使用 `POST /api/admin/stock-sync`（`mode=backfill` 等）全量回灌 `basic`+日/周/月 → 触发指标与温度重算；记录 `batch_id` 与耗时（**SQL 清空已于 2026-03-28 完成；回灌与指标/温度/极值仍待执行，见 `migration-runbook.md` §3、§5**）
 
 **Checkpoint**：生产/预发数据全部为前复权链路写入，无旧批次混入。
 

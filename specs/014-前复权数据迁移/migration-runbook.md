@@ -55,9 +55,19 @@ cd backend && python -m app.scripts.recompute_hist_extrema_full
 
 ## 5. 生产执行记录（T014）
 
+| 步骤 | 状态 | 时间 | 备注 |
+|------|------|------|------|
+| 数据库备份 | 执行人自填 | | 回滚依赖 |
+| `truncate_for_qfq_migration.sql` 清空 | **已完成** | 2026-03-28 | 用户确认：数据已删除 |
+| `POST /api/admin/stock-sync` 全量 backfill | **待执行** | | 见 §3；完成后填 `batch_id` |
+| `POST /api/admin/stock-indicators` full | 待执行 | | 见 §3 |
+| 大盘温度 / 极值全量 / 策略 | 待执行 | | 见 §3 |
+
+**遗留表头（回灌完成后补全）**：
+
 | 字段 | 填写 |
 |------|------|
-| 执行时间 | |
+| stock-sync 执行时间 | |
 | batch_id（stock-sync） | |
 | 耗时（估算） | |
 | 执行人 | |
