@@ -10,6 +10,12 @@ export interface StockBasicItem {
   list_date: string | null
   synced_at: string | null
   data_source: string | null
+  /** 历史最高价（已入库日线全历史），无数据为 null */
+  hist_high: number | null
+  /** 历史最低价（已入库日线全历史），无数据为 null */
+  hist_low: number | null
+  /** 极值最近计算时间 */
+  hist_extrema_computed_at: string | null
 }
 
 export interface StockBasicListResponse {
