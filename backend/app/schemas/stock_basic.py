@@ -14,6 +14,9 @@ class StockBasicItem(BaseModel):
     list_date: date | None = None
     synced_at: datetime | None = None
     data_source: str | None = None
+    hist_high: float | None = None
+    hist_low: float | None = None
+    hist_extrema_computed_at: datetime | None = None
 
     model_config = {"from_attributes": True}
 

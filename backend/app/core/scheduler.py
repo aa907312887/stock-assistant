@@ -1,4 +1,4 @@
-"""APScheduler：交易日 17:00 股票数据同步；17:10/启动后大盘温度；17:20 冲高回落与恐慌回落战法自动选股落库。"""
+"""APScheduler：交易日 17:00 股票数据同步；17:10/启动后大盘温度；17:20 冲高回落与恐慌回落战法自动选股落库；18:00 历史高低价增量回写 stock_basic。"""
 import logging
 from datetime import date, datetime, timedelta
 
@@ -17,6 +17,7 @@ from app.services.sync_task_runner import (
 )
 from app.services.tushare_client import get_latest_open_trade_date
 from app.services.market_temperature.temperature_job_service import run_incremental_temperature_job
+from app.services.stock_hist_extrema_service import run_incremental_for_trade_date
 from app.services.strategy.strategy_execute_service import StrategyDataNotReadyError, execute_strategy
 
 logger = logging.getLogger(__name__)
@@ -30,6 +31,7 @@ _BUSINESS_RUN_SYNC = "app.services.stock_sync_service.run_sync"
 _JOB_MARKET_TEMP = "market_temperature_sync"
 _JOB_STRATEGY_CGHL = "strategy_chong_gao_hui_luo_daily"
 _JOB_STRATEGY_PANIC = "strategy_panic_pullback_daily"
+_JOB_HIST_EXTREMA = "hist_extrema_incremental_daily"
 
 _scheduler: BackgroundScheduler | None = None
 CRON_HOUR = 17
@@ -156,6 +158,31 @@ def _job_strategy_panic_pullback_daily() -> None:
         db.close()
 
 
+def _job_hist_extrema_incremental_daily() -> None:
+    """交易日 18:00：对当日有日线的股票按全历史重算极值并写入 stock_basic。"""
+    today = date.today()
+    latest = get_latest_open_trade_date(today)
+    if latest is None or latest != today:
+        logger.info("历史极值增量跳过：今日非交易日（最近开市日=%s）", latest)
+        return
+
+    db = SessionLocal()
+    try:
+        result = run_incremental_for_trade_date(db, today)
+        logger.info("历史极值定时任务完成 result=%s", result)
+    except Exception as e:
+        log_scheduled_job_failure(
+            logger,
+            job_id=_JOB_HIST_EXTREMA,
+            scheduler_entry="app.core.scheduler._job_hist_extrema_incremental_daily",
+            business_callable="app.services.stock_hist_extrema_service.run_incremental_for_trade_date",
+            external_api=None,
+            exc=e,
+        )
+    finally:
+        db.close()
+
+
 def _mark_stale_running_jobs_failed() -> None:
     """将长时间停留在 running 的记录标为失败，避免进程中断后页面永远显示运行中。"""
     db = SessionLocal()
@@ -216,6 +243,12 @@ def start_scheduler() -> None:
         id=_JOB_STRATEGY_PANIC,
         replace_existing=True,
     )
+    _scheduler.add_job(
+        _job_hist_extrema_incremental_daily,
+        trigger=CronTrigger(hour=18, minute=0, timezone=TIMEZONE),
+        id=_JOB_HIST_EXTREMA,
+        replace_existing=True,
+    )
     _scheduler.start()
     _mark_stale_running_jobs_failed()
     _db = SessionLocal()
@@ -224,11 +257,12 @@ def start_scheduler() -> None:
     finally:
         _db.close()
     logger.info(
-        "Scheduler started: stock_sync daily at %s:%s %s modules=%s",
+        "Scheduler started: stock_sync daily at %s:%s %s modules=%s; hist_extrema incremental at 18:00 %s",
         CRON_HOUR,
         CRON_MINUTE,
         TIMEZONE,
         SCHEDULED_SYNC_MODULES,
+        TIMEZONE,
     )
 
 

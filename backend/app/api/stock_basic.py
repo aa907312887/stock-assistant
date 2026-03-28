@@ -15,6 +15,12 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/stock/basic", tags=["股票基本信息"])
 
+
+def _decimal_to_float(v: object | None) -> float | None:
+    if v is None:
+        return None
+    return float(v)
+
 # 历史数据可能存为 zhitu，对外统一展示为 tushare
 _LEGACY_SOURCE_MAP = {"zhitu", "zhitu_api"}
 
@@ -95,6 +101,9 @@ def list_stock_basic(
             list_date=r.list_date,
             synced_at=r.synced_at,
             data_source=_normalize_data_source(r.data_source),
+            hist_high=_decimal_to_float(r.hist_high),
+            hist_low=_decimal_to_float(r.hist_low),
+            hist_extrema_computed_at=r.hist_extrema_computed_at,
         )
         for r in rows
     ]
