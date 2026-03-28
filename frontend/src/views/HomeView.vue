@@ -427,30 +427,31 @@ onMounted(async () => {
   min-height: calc(100vh - 120px);
 }
 .welcome {
-  margin-bottom: 16px;
+  margin-bottom: 20px;
 }
 .title {
   margin: 0;
-  font-size: 1.35rem;
+  font-size: 1.55rem;
   font-weight: 600;
   color: #1e3a5f;
 }
 .hero {
-  border-radius: 16px;
+  border-radius: 18px;
   border: 2px solid #c45656;
   background: linear-gradient(180deg, #fff5f5 0%, #ffffff 52%);
-  box-shadow: 0 8px 32px rgba(196, 86, 86, 0.14);
+  box-shadow: 0 10px 40px rgba(196, 86, 86, 0.16);
 }
 .home-main {
-  max-width: 960px;
+  width: 100%;
+  max-width: min(1180px, 100%);
   min-height: calc(100vh - 170px);
 }
 .hero :deep(.el-card__header) {
-  padding: 18px 28px;
+  padding: 22px 32px;
   border-bottom: 1px solid rgba(196, 86, 86, 0.2);
 }
 .hero :deep(.el-card__body) {
-  padding: 28px 28px 32px;
+  padding: 36px 36px 40px;
 }
 .hero-header {
   display: flex;
@@ -463,7 +464,7 @@ onMounted(async () => {
   gap: 10px;
 }
 .hero-title {
-  font-size: 1.5rem;
+  font-size: 1.75rem;
   font-weight: 800;
   letter-spacing: 0.02em;
   color: #9f1239;
@@ -478,44 +479,44 @@ onMounted(async () => {
   font-size: 13px;
 }
 .warn-line {
-  margin: 0 0 20px;
+  margin: 0 0 24px;
   font-weight: 700;
   color: #9f1239;
-  font-size: 1.35rem;
+  font-size: 1.55rem;
   line-height: 1.45;
   letter-spacing: 0.02em;
 }
 .weights {
   display: flex;
   flex-wrap: wrap;
-  gap: 14px;
-  margin-bottom: 24px;
-  font-size: 1.1rem;
+  gap: 16px;
+  margin-bottom: 28px;
+  font-size: 1.15rem;
   color: #1d2129;
 }
 .weights span {
-  padding: 8px 14px;
+  padding: 10px 16px;
   background: #fde2e2;
-  border-radius: 8px;
+  border-radius: 10px;
   font-weight: 700;
-  font-size: 1.05rem;
+  font-size: 1.1rem;
 }
 .faces {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-  gap: 20px;
-  margin-bottom: 28px;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 24px;
+  margin-bottom: 32px;
 }
 .face {
-  padding: 18px 20px;
-  border-radius: 12px;
+  padding: 22px 24px;
+  border-radius: 14px;
   background: #fff;
   border: 1px solid #e4e7ed;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
 }
 .face h3 {
-  margin: 0 0 12px;
-  font-size: 1.15rem;
+  margin: 0 0 14px;
+  font-size: 1.25rem;
   font-weight: 700;
   color: #1e3a5f;
 }
@@ -523,8 +524,8 @@ onMounted(async () => {
   margin: 0;
   white-space: pre-wrap;
   color: #1d2129;
-  line-height: 1.75;
-  font-size: 1.125rem;
+  line-height: 1.8;
+  font-size: 1.2rem;
   font-weight: 500;
 }
 .hero-actions {
@@ -542,21 +543,21 @@ onMounted(async () => {
   padding: 12px 0;
 }
 .empty-copy {
-  max-width: 420px;
-  margin: 0 auto 16px;
+  max-width: 520px;
+  margin: 0 auto 20px;
   text-align: center;
 }
 .empty-title {
-  margin: 0 0 8px;
-  font-size: 1.2rem;
+  margin: 0 0 10px;
+  font-size: 1.35rem;
   font-weight: 600;
   color: #303133;
 }
 .empty-desc {
   margin: 0;
   color: #606266;
-  line-height: 1.6;
-  font-size: 1rem;
+  line-height: 1.65;
+  font-size: 1.08rem;
 }
 .weight-inputs {
   display: flex;
@@ -585,9 +586,9 @@ onMounted(async () => {
   color: #303133;
 }
 .insights-block {
-  margin-bottom: 28px;
-  padding: 20px 22px;
-  border-radius: 12px;
+  margin-bottom: 32px;
+  padding: 24px 26px;
+  border-radius: 14px;
   background: #fafafa;
   border: 1px dashed #dcdfe6;
 }
@@ -595,8 +596,8 @@ onMounted(async () => {
   background: #fdfdfd;
 }
 .insights-title {
-  margin: 0 0 14px;
-  font-size: 1.15rem;
+  margin: 0 0 16px;
+  font-size: 1.28rem;
   font-weight: 700;
   color: #1e3a5f;
 }
@@ -604,8 +605,8 @@ onMounted(async () => {
   margin: 0;
   padding-left: 1.35rem;
   color: #1d2129;
-  font-size: 1.05rem;
-  line-height: 1.75;
+  font-size: 1.12rem;
+  line-height: 1.8;
   font-weight: 500;
 }
 .insights-item {
