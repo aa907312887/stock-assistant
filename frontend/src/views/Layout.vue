@@ -31,6 +31,7 @@
           <el-sub-menu index="strategy">
             <template #title>策略选股</template>
             <el-menu-item index="/strategy/chong-gao-hui-luo">冲高回落战法</el-menu-item>
+            <el-menu-item index="/strategy/panic-pullback">恐慌回落战法</el-menu-item>
           </el-sub-menu>
           <el-sub-menu index="backtest">
             <template #title>智能回测</template>

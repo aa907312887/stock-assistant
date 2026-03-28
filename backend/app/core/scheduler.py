@@ -1,4 +1,4 @@
-"""APScheduler：交易日每日 17:00 执行股票数据同步（基础 + 日线 + 周线 + 月线批量）。"""
+"""APScheduler：交易日 17:00 股票数据同步；17:10/启动后大盘温度；17:20 冲高回落与恐慌回落战法自动选股落库。"""
 import logging
 from datetime import date, datetime, timedelta
 
@@ -29,6 +29,7 @@ _ENTRY_SYNC = "app.core.scheduler._job_sync_stock"
 _BUSINESS_RUN_SYNC = "app.services.stock_sync_service.run_sync"
 _JOB_MARKET_TEMP = "market_temperature_sync"
 _JOB_STRATEGY_CGHL = "strategy_chong_gao_hui_luo_daily"
+_JOB_STRATEGY_PANIC = "strategy_panic_pullback_daily"
 
 _scheduler: BackgroundScheduler | None = None
 CRON_HOUR = 17
@@ -128,6 +129,33 @@ def _job_strategy_chong_gao_hui_luo_daily() -> None:
         db.close()
 
 
+def _job_strategy_panic_pullback_daily() -> None:
+    """定时任务：交易日每日 17:20（上海时区）筛选「恐慌回落战法」当日候选并落库；规则与冲高回落定时任务相同。"""
+    today = date.today()
+    latest = get_latest_open_trade_date(today)
+    if latest is None or latest != today:
+        logger.info("恐慌回落定时筛选跳过：今日非交易日（最近开市日=%s）", latest)
+        return
+
+    db = SessionLocal()
+    try:
+        execute_strategy(db, strategy_id="panic_pullback", as_of_date=today)
+        logger.info("恐慌回落定时筛选完成 as_of_date=%s", today)
+    except StrategyDataNotReadyError as e:
+        logger.info("恐慌回落定时筛选跳过：数据未就绪 as_of_date=%s reason=%s", today, e)
+    except Exception as e:
+        log_scheduled_job_failure(
+            logger,
+            job_id=_JOB_STRATEGY_PANIC,
+            scheduler_entry="app.core.scheduler._job_strategy_panic_pullback_daily",
+            business_callable="app.services.strategy.strategy_execute_service.execute_strategy",
+            external_api=None,
+            exc=e,
+        )
+    finally:
+        db.close()
+
+
 def _mark_stale_running_jobs_failed() -> None:
     """将长时间停留在 running 的记录标为失败，避免进程中断后页面永远显示运行中。"""
     db = SessionLocal()
@@ -180,6 +208,12 @@ def start_scheduler() -> None:
         _job_strategy_chong_gao_hui_luo_daily,
         trigger=CronTrigger(hour=17, minute=20, timezone=TIMEZONE),
         id=_JOB_STRATEGY_CGHL,
+        replace_existing=True,
+    )
+    _scheduler.add_job(
+        _job_strategy_panic_pullback_daily,
+        trigger=CronTrigger(hour=17, minute=20, timezone=TIMEZONE),
+        id=_JOB_STRATEGY_PANIC,
         replace_existing=True,
     )
     _scheduler.start()

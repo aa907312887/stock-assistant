@@ -36,6 +36,11 @@ const router = createRouter({
           component: () => import('@/views/ChongGaoHuiLuoView.vue'),
         },
         {
+          path: 'strategy/panic-pullback',
+          name: 'strategy-panic-pullback',
+          component: () => import('@/views/PanicPullbackView.vue'),
+        },
+        {
           path: 'backtest/history',
           name: 'backtest-history',
           component: () => import('@/views/HistoryBacktestView.vue'),

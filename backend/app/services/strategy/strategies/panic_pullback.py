@@ -341,12 +341,19 @@ class PanicPullbackStrategy(StockStrategy):
         for t in result.trades:
             if t.buy_date != as_of_date:
                 continue
+            summary: dict[str, Any] = dict(t.extra or {})
+            if t.trade_type == "closed" and t.return_rate is not None:
+                summary["return_rate"] = t.return_rate
+                if t.sell_date is not None:
+                    summary["sell_date"] = t.sell_date.isoformat()
+                if t.sell_price is not None:
+                    summary["sell_price"] = t.sell_price
             items.append(StrategyCandidate(
                 stock_code=t.stock_code,
                 stock_name=t.stock_name,
                 exchange_type=None,
                 trigger_date=t.buy_date,
-                summary=t.extra,
+                summary=summary,
             ))
             signals.append(StrategySignal(
                 stock_code=t.stock_code,

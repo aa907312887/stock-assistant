@@ -38,6 +38,11 @@ export type ExecutionSnapshot = {
 export type StrategySelectionItem = {
   stock_code: string
   stock_name?: string | null
+  /** 交易所 SSE/SZSE/BSE */
+  exchange?: string | null
+  /** 板块：主板/创业板等；空为 null 或 '' */
+  market?: string | null
+  /** 兼容旧页展示 */
   exchange_type?: string | null
   trigger_date: string
   summary: Record<string, any>

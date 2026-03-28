@@ -49,7 +49,9 @@ class ExecutionSnapshot(BaseModel):
 class StrategySelectionItem(BaseModel):
     stock_code: str
     stock_name: str | None = None
-    exchange_type: str | None = Field(default=None, description="交易所/板块类型（如 SSE/SZSE/BJSE/科创板/创业板等，以基础数据为准）")
+    exchange: str | None = Field(default=None, description="交易所：SSE/SZSE/BSE（来自 stock_basic.exchange）")
+    market: str | None = Field(default=None, description="板块：主板/创业板/科创板/北交所等（来自 stock_basic.market）")
+    exchange_type: str | None = Field(default=None, description="兼容旧页：可由交易所/板块拼接，勿单独用作筛选主字段")
     trigger_date: dt_date
     summary: dict[str, Any] = Field(default_factory=dict)
 

@@ -121,6 +121,18 @@ def execute_strategy(
     return snapshot, items, signals
 
 
+def _legacy_exchange_type(
+    exchange: str | None,
+    market: str | None,
+    fallback: str | None,
+) -> str | None:
+    """兼容冲高回落等旧页单列展示：优先策略自带，否则拼接交易所/板块。"""
+    if fallback:
+        return fallback
+    parts = [p for p in (exchange, market) if p]
+    return "/".join(parts) if parts else None
+
+
 def get_latest_strategy_result(
     db: Session,
     *,
@@ -148,11 +160,15 @@ def get_latest_strategy_result(
     items: list[dict[str, Any]] = []
     for sel, basic in rows:
         summary = dict(sel.summary_json or {})
+        ex = basic.exchange
+        mk = basic.market
         items.append(
             {
                 "stock_code": sel.stock_code,
                 "stock_name": basic.name,
-                "exchange_type": basic.exchange or basic.market or summary.get("exchange_type"),
+                "exchange": ex,
+                "market": mk,
+                "exchange_type": _legacy_exchange_type(ex, mk, summary.get("exchange_type")),
                 "trigger_date": sel.trigger_date,
                 "summary": summary,
             }
@@ -179,19 +195,26 @@ def get_latest_strategy_result(
 def _candidates_to_api_items(db: Session, items: list[StrategyCandidate]) -> list[dict[str, Any]]:
     if not items:
         return []
-    code_to_name: dict[str, str | None] = {}
-    missing = [i.stock_code for i in items if not i.stock_name]
-    if missing:
-        rows = db.query(StockBasic.code, StockBasic.name).filter(StockBasic.code.in_(missing)).all()
-        for c, n in rows:
-            code_to_name[c] = n
+    codes = list({i.stock_code for i in items})
+    rows = db.query(StockBasic.code, StockBasic.name, StockBasic.exchange, StockBasic.market).filter(
+        StockBasic.code.in_(codes)
+    ).all()
+    code_to_basic: dict[str, tuple[str | None, str | None, str | None]] = {
+        r.code: (r.name, r.exchange, r.market) for r in rows
+    }
     out: list[dict[str, Any]] = []
     for i in items:
+        name_b, ex_b, mk_b = code_to_basic.get(i.stock_code, (None, None, None))
+        stock_name = i.stock_name or name_b
+        exchange = ex_b
+        market = mk_b
         out.append(
             {
                 "stock_code": i.stock_code,
-                "stock_name": i.stock_name or code_to_name.get(i.stock_code),
-                "exchange_type": i.exchange_type,
+                "stock_name": stock_name,
+                "exchange": exchange,
+                "market": market,
+                "exchange_type": _legacy_exchange_type(exchange, market, i.exchange_type),
                 "trigger_date": i.trigger_date,
                 "summary": i.summary,
             }
