@@ -1,0 +1,70 @@
+# Phase 1 数据模型说明：前复权数据迁移
+
+本文档描述**受影响的表**、清空约束、字段语义变更及表间关系；**不删除表结构**，仅行级清空或语义重定义。
+
+---
+
+## 1. 语义约定
+
+| 表 | 变更说明 |
+|----|----------|
+| `stock_daily_bar` | `open`/`high`/`low`/`close`/`prev_close` 及由价格推导的涨跌幅类字段，语义统一为 **Tushare `pro_bar` + `qfq` 前复权**；`daily_basic` 来源的换手率、市值、PE 等**非 OHLC** 字段仍为当日全市场指标，与复权无冲突。 |
+| `stock_weekly_bar` / `stock_monthly_bar` | OHLC 为 **`stk_week_month_adj` 的 `*_qfq`**；`vol`/`amount` 等同接口原文。 |
+| `stock_basic` | 规格要求**全表行删除后重拉** `stock_basic`（`stock_basic` 接口）；`hist_high`/`hist_low`/`hist_extrema_computed_at` 随清空后在历史极值任务中重算。 |
+
+---
+
+## 2. 核心业务表（须清空行数据）
+
+以下表在迁移窗口中执行 **`DELETE` 或 `TRUNCATE`**（无 FK 指向本表时优先 `TRUNCATE` 提速），**不** `DROP TABLE`。
+
+| 实体 | 表名 | 主键/唯一键 | 说明 |
+|------|------|----------------|------|
+| 股票主档 | `stock_basic` | `id`，`code` UNIQUE | 清空后由 `stock_basic` 同步重灌 |
+| 日线 | `stock_daily_bar` | `id`，`(stock_code, trade_date)` UNIQUE | 含指标列 ma/macd，清空后回灌 + `fill_indicators_*` |
+| 周线 | `stock_weekly_bar` | `id`，`(stock_code, trade_week_end)` UNIQUE | 同上 |
+| 月线 | `stock_monthly_bar` | `id`，`(stock_code, trade_month_end)` UNIQUE | 同上 |
+| 大盘温度 | `market_temperature_daily` | 见模型 | 清空后按指数日线重算 |
+| 大盘温度 | `market_temperature_factor_daily` | 见模型 | 因子明细，随温度重算 |
+| 指数行情副本 | `market_index_daily_quote` | 见模型 | 温度计算输入，清空后重拉 |
+| 文案/规则（若存依赖旧行情的展示） | `market_temperature_copywriting`、`market_temperature_level_rule` | 视产品：规则类可保留；若与历史序列强绑定则按实施清单 |
+
+**说明**：`market_temperature_*` 的具体字段以 `backend/app/models/` 为准；若某表仅为配置且与复权无关，可在实施清单中标注**保留**并写明理由。
+
+---
+
+## 3. 派生与任务类表（须清空或标记失效）
+
+| 类型 | 表名 | 处理策略 |
+|------|------|----------|
+| 策略输出 | `strategy_selection_item`、`strategy_signal_event`、`strategy_execution_snapshot` | **建议清空**：选股结果依赖日/周/月前复权行情；迁移后由定时任务或手动重跑策略重算 |
+| 同步审计 | `sync_job_run`、`sync_task` | **建议清空或归档**：避免旧 `batch_id` 与新数据混淆；若需审计可先将历史导出备份再 `TRUNCATE` |
+| 回测 | `backtest_task`、`backtest_trade` | **默认不在本轮自动清空**（规格：分钟线/回测未默认纳入）；若业务要求与行情强一致，在 `plan` 执行清单中单列「可选：清空回测结果」 |
+
+---
+
+## 4. `stock_basic` 历史极值字段
+
+| 字段 | 类型（参考） | 说明 |
+|------|----------------|------|
+| `hist_high` / `hist_low` | `Numeric(12,4)` | 基于**前复权日线全历史**重算后写回 |
+| `hist_extrema_computed_at` | `DateTime` | 重算完成时间 |
+
+清空 `stock_basic` 行后上述字段随 `run_incremental_for_trade_date` / 全量重算任务再次写入。
+
+---
+
+## 5. 索引与约束
+
+迁移**不改变**现有 UNIQUE 与索引定义；重灌后由既有同步逻辑保证 `(stock_code, trade_date)` 等唯一性。
+
+---
+
+## 6. 可选元数据（实施阶段）
+
+若需明确「本库已切换前复权」，可在 `plan` 阶段决定是否新增：
+
+- 配置表键值，或  
+- `stock_daily_bar.data_source` 仍用 `tushare`，在 `extra_json`（若将来扩展）中记录 `price_adjust=qfq`  
+
+**默认**：不写新列也可，以代码与文档约定 `pro_bar`/`qfq` 为准。

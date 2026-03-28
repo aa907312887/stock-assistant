@@ -1,4 +1,4 @@
-"""历史周线同步服务（stk_weekly_monthly 全市场批量，避免逐标的请求）。"""
+"""历史周线同步服务（`stk_week_month_adj` 全市场批量前复权 OHLC，避免逐标的请求）。"""
 
 from __future__ import annotations
 
@@ -77,6 +77,8 @@ def _supplement_weekly_from_daily(db: Session, *, anchor_date: date, batch_id: s
     以日线补充“当周未完结周K”：
     - trade_week_end 固定写为本周最后开市日（通常周五）
     - 以 [周一..anchor] 的日线聚合 open/high/low/close/volume/amount
+
+    日线已为**前复权**（`pro_bar` qfq），此处聚合与主路径周 K 口径一致。
     """
     week_end = get_week_last_open_date(anchor_date)
     if week_end is None:
@@ -143,7 +145,7 @@ def _supplement_weekly_from_daily(db: Session, *, anchor_date: date, batch_id: s
 
 
 def sync_weekly_bars_batch(db: Session, *, trade_date: date, batch_id: str) -> dict[str, int]:
-    """按锚点日期拉取当周最新周 K 快照（stk_weekly_monthly，freq=week）。"""
+    """按锚点日期拉取当周最新周 K 快照（`stk_week_month_adj`，freq=week，前复权 OHLC）。"""
     rows = get_stk_weekly_monthly_latest_by_anchor(trade_date, "week")
     written = _upsert_weekly_rows(db, rows, batch_id)
     supplemented = _supplement_weekly_from_daily(db, anchor_date=trade_date, batch_id=batch_id)
@@ -159,7 +161,7 @@ def sync_weekly_bars_batch(db: Session, *, trade_date: date, batch_id: str) -> d
     rows_for_report = supplemented if supplemented > 0 else written
     if rows_for_report == 0:
         logger.warning(
-            "周线写入 0 行：请核对 stk_weekly_monthly 积分权限、交易日历与代码映射。"
+            "周线写入 0 行：请核对 stk_week_month_adj 积分权限、交易日历与代码映射。"
         )
     return {"weekly_rows": rows_for_report}
 
@@ -175,7 +177,7 @@ def sync_weekly_bars_backfill_batch(
     )
     batch_dates = enumerate_week_batch_trade_dates(start_date, end_date)
     n = len(batch_dates)
-    logger.info("周线回灌：共 %s 个周界日，开始逐批请求 Tushare stk_weekly_monthly(freq=week)", n)
+    logger.info("周线回灌：共 %s 个周界日，开始逐批请求 Tushare stk_week_month_adj(freq=week)", n)
     total = 0
     for i, td in enumerate(batch_dates, start=1):
         rows = get_stk_weekly_monthly_by_trade_date(td, "week")

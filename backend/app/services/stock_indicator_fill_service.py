@@ -1,4 +1,8 @@
-"""将均线与 MACD 写入日/周/月 bar 表（行情同步后或手工回填）。"""
+"""将均线与 MACD 写入日/周/月 bar 表（行情同步后或手工回填）。
+
+本库 K 线 OHLC 为**前复权**口径（日线 `pro_bar` qfq，周/月 `stk_week_month_adj`），
+指标计算仅依赖已落库的 `close` 序列与 `technical_indicator` 公式，无单独「未复权」分支。
+"""
 
 from __future__ import annotations
 

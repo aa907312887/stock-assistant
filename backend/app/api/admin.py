@@ -12,7 +12,6 @@ from app.config import settings
 from app.core.scheduler import run_sync_once_now
 from app.database import get_db
 from app.models import SyncJobRun, SyncTask, User
-from app.services.tushare_client import get_latest_open_trade_date
 from app.services.stock_indicator_fill_service import fill_indicators_for_timeframe
 from app.schemas.stock_indicators import (
     TriggerStockIndicatorsRequest,
@@ -27,6 +26,13 @@ from app.schemas.sync_job import (
     SyncTaskListResponse,
     TriggerSyncRequest,
     TriggerSyncResponse,
+)
+from app.schemas.tushare_probe import TushareProbeProBarResponse, TushareProbeWeekMonthAdjResponse
+from app.services.tushare_client import (
+    TushareClientError,
+    fetch_pro_bar_qfq_daily,
+    get_latest_open_trade_date,
+    get_stk_weekly_monthly_by_trade_date,
 )
 
 logger = logging.getLogger(__name__)
@@ -57,6 +63,66 @@ def _check_sync_monitor_viewer(current_user: User) -> None:
             status_code=status.HTTP_403_FORBIDDEN,
             detail="仅允许杨佳兴查看同步任务监控",
         )
+
+
+@router.get("/tushare-probe/pro-bar-qfq", response_model=TushareProbeProBarResponse)
+def tushare_probe_pro_bar_qfq(
+    ts_code: str = Query(..., description="证券代码，如 000001.SZ"),
+    start_date: date = Query(..., description="开始日 YYYY-MM-DD"),
+    end_date: date = Query(..., description="结束日 YYYY-MM-DD"),
+    limit: int = Query(20, ge=1, le=5000),
+    x_admin_secret: str | None = Header(None, alias="X-Admin-Secret"),
+) -> TushareProbeProBarResponse:
+    """探测 Tushare `pro_bar` 前复权日线，不写库（FR-007 / SC-006）。"""
+    _check_admin(x_admin_secret)
+    tc = ts_code.strip()
+    try:
+        rows = fetch_pro_bar_qfq_daily(tc, start_date, end_date, limit=limit)
+        cap = rows[:limit]
+        return TushareProbeProBarResponse(
+            ok=True,
+            ts_code=tc,
+            adj="qfq",
+            freq="D",
+            row_count=len(rows),
+            sample=cap,
+            error=None,
+        )
+    except TushareClientError as e:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(e),
+        ) from e
+
+
+@router.get("/tushare-probe/stk-week-month-adj-qfq", response_model=TushareProbeWeekMonthAdjResponse)
+def tushare_probe_stk_week_month_adj(
+    trade_date: date = Query(..., description="周/月线对应 trade_date（常为周末或月末交易日）"),
+    freq: str = Query(..., description="week 或 month"),
+    limit: int = Query(20, ge=1, le=6000),
+    x_admin_secret: str | None = Header(None, alias="X-Admin-Secret"),
+) -> TushareProbeWeekMonthAdjResponse:
+    """探测 `stk_week_month_adj` 全市场批量一行（已映射前复权 OHLC），不写库。"""
+    _check_admin(x_admin_secret)
+    fq = freq.strip().lower()
+    if fq not in ("week", "month"):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="freq 须为 week 或 month")
+    try:
+        rows = get_stk_weekly_monthly_by_trade_date(trade_date, fq)
+        cap = rows[:limit]
+        return TushareProbeWeekMonthAdjResponse(
+            ok=True,
+            trade_date=trade_date.strftime("%Y%m%d"),
+            freq=fq,
+            row_count=len(rows),
+            sample=cap,
+            error=None,
+        )
+    except TushareClientError as e:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(e),
+        ) from e
 
 
 def _run_stock_indicators_background(

@@ -1,4 +1,4 @@
-"""历史日线同步服务：合并 daily 与 daily_basic 写入 stock_daily_bar。"""
+"""历史日线同步服务：`pro_bar` 前复权与 `daily_basic` 合并写入 stock_daily_bar。"""
 
 from __future__ import annotations
 
@@ -11,9 +11,17 @@ from sqlalchemy.orm import Session
 
 from app.models import StockDailyBar
 from app.services.stock_sync_utils import safe_decimal
-from app.services.tushare_client import get_daily_basic_by_trade_date, get_daily_by_trade_date, normalize_bar
+from app.services.tushare_client import (
+    TushareClientError,
+    get_daily_basic_by_trade_date,
+    get_pro_bar_qfq_for_trade_date,
+    normalize_bar,
+)
 
 logger = logging.getLogger(__name__)
+
+# 全市场逐标的请求 pro_bar，每 N 只打一次进度，避免刷屏
+DAILY_QFQ_PROGRESS_EVERY = 200
 
 
 def _cap_to_yuan(value: Any) -> Decimal | None:
@@ -30,23 +38,35 @@ def sync_daily_bars(
     trade_date: date,
     batch_id: str,
 ) -> dict[str, int]:
-    daily_map = get_daily_by_trade_date(trade_date)
+    """
+    按标的调用 Tushare `pro_bar`（`adj='qfq'`）写入**前复权** OHLCV；
+    换手率、市值、估值等仍来自当日全市场 `daily_basic`。
+    """
     basic_map = get_daily_basic_by_trade_date(trade_date)
+    n = len(codes)
     logger.info(
-        "Tushare 全市场日线 trade_date=%s：daily 行数=%s daily_basic 行数=%s 待匹配标的数=%s",
+        "Tushare 日线前复权 trade_date=%s：daily_basic 行数=%s 待请求标的数=%s（逐只 pro_bar qfq）",
         trade_date,
-        len(daily_map),
         len(basic_map),
-        len(codes),
+        n,
     )
     written = 0
 
-    for code in codes:
-        raw_bar = daily_map.get(code)
+    for idx, code in enumerate(codes, start=1):
+        try:
+            raw_bar = get_pro_bar_qfq_for_trade_date(code, trade_date)
+        except TushareClientError as e:
+            logger.warning(
+                "标的 pro_bar(qfq) 失败 ts_code=%s trade_date=%s err=%s",
+                code,
+                trade_date,
+                e,
+            )
+            continue
         raw_basic = basic_map.get(code, {})
         if not raw_bar and not raw_basic:
             continue
-        bar = normalize_bar(raw_bar) or {}
+        bar = normalize_bar(raw_bar) if raw_bar else {}
         existing = (
             db.query(StockDailyBar)
             .filter(StockDailyBar.stock_code == code, StockDailyBar.trade_date == trade_date)
@@ -88,17 +108,23 @@ def sync_daily_bars(
                 )
             )
         written += 1
+        if idx == 1 or idx == n or idx % DAILY_QFQ_PROGRESS_EVERY == 0:
+            logger.info(
+                "日线前复权进度 %s/%s trade_date=%s 已写入=%s",
+                idx,
+                n,
+                trade_date,
+                written,
+            )
+
     db.commit()
     logger.info("历史日线同步完成 trade_date=%s written=%s", trade_date, written)
     if written == 0 and codes:
         sample_code = codes[:3]
-        sample_dm = list(daily_map.keys())[:3]
         logger.warning(
-            "日线写入 0 行：请核对 (1) Tushare daily 是否对该日有数据（非交易日/未来日会为空）"
-            "(2) stock_basic.code 是否为 ts_code（如 000001.SZ），与 Tushare 返回键一致；"
-            "示例 stock_basic.code=%s 示例 Tushare 键=%s",
+            "日线写入 0 行：请核对 (1) 是否非交易日/无 pro_bar 数据 (2) stock_basic.code 是否为 ts_code（如 000001.SZ）；"
+            "示例 code=%s",
             sample_code,
-            sample_dm,
         )
     return {"daily_rows": written}
 

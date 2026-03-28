@@ -1,4 +1,4 @@
-"""历史月线同步服务（stk_weekly_monthly 全市场批量，避免逐标的请求）。"""
+"""历史月线同步服务（`stk_week_month_adj` 全市场批量前复权 OHLC，避免逐标的请求）。"""
 
 from __future__ import annotations
 
@@ -76,6 +76,8 @@ def _supplement_monthly_from_daily(db: Session, *, anchor_date: date, batch_id: 
     以日线补充“当月未完结月K”：
     - trade_month_end 固定写为当月最后开市日
     - 以 [月初..anchor] 的日线聚合 open/high/low/close/volume/amount
+
+    日线已为**前复权**，聚合与主路径月 K 口径一致。
     """
     month_end = get_month_last_open_date(anchor_date)
     if month_end is None:
@@ -143,8 +145,8 @@ def _supplement_monthly_from_daily(db: Session, *, anchor_date: date, batch_id: 
 
 def sync_monthly_bars_batch(db: Session, *, trade_date: date, batch_id: str) -> dict[str, int]:
     """
-    按交易日期全市场拉月线（stk_weekly_monthly，freq=month）。
-    每个交易日均调用，以支持当月「未完成」月线（与规格 FR-007 补充一致）。
+    按交易日期全市场拉月线（`stk_week_month_adj`，freq=month，前复权 OHLC）。
+    每个交易日均调用，以支持当月「未完成」月线。
     """
     rows = get_stk_weekly_monthly_latest_by_anchor(trade_date, "month")
     written = _upsert_monthly_rows(db, rows, batch_id)
@@ -172,7 +174,7 @@ def sync_monthly_bars_backfill_batch(
     )
     batch_dates = enumerate_month_batch_trade_dates(start_date, end_date)
     n = len(batch_dates)
-    logger.info("月线回灌：共 %s 个月末批次，开始逐批请求 Tushare stk_weekly_monthly(freq=month)", n)
+    logger.info("月线回灌：共 %s 个月末批次，开始逐批请求 Tushare stk_week_month_adj(freq=month)", n)
     total = 0
     for i, td in enumerate(batch_dates, start=1):
         rows = get_stk_weekly_monthly_by_trade_date(td, "month")
