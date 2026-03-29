@@ -19,10 +19,14 @@ from app.services.backtest.backtest_report import (
     calculate_temp_level_stats,
     generate_conclusion,
 )
+from app.services.backtest.portfolio_simulation import simulate_single_slot_portfolio
 from app.services.strategy.registry import get_strategy
 from app.services.strategy.strategy_base import BacktestTrade
 
 logger = logging.getLogger(__name__)
+
+# 所有策略均跑单仓+补仓资金仿真；仅 panic_pullback 允许「上一笔卖出当日」再开仓他股（allow_rebuy_same_day_as_prior_sell）。
+_PANIC_SAME_DAY_REBUY_STRATEGY_ID = "panic_pullback"
 
 
 def enrich_trades_with_temperature(db: Session, trades: list[BacktestTrade]) -> list[BacktestTrade]:
@@ -79,6 +83,8 @@ def run_backtest(
     strategy_id: str,
     start_date: date,
     end_date: date,
+    position_amount: float = 100_000.0,
+    reserve_amount: float = 100_000.0,
 ) -> None:
     """后台线程中执行的回测主流程。"""
     task = db.query(BacktestTask).filter(BacktestTask.task_id == task_id).one()
@@ -94,6 +100,26 @@ def run_backtest(
 
         enriched_trades = enrich_trades_with_temperature(db, result.trades)
         enriched_trades = enrich_trades_with_stock_dimension(db, enriched_trades)
+
+        closed_for_slot = [t for t in enriched_trades if t.trade_type == "closed"]
+        unclosed_kept = [t for t in enriched_trades if t.trade_type != "closed"]
+        allow_same_day_rebuy = strategy_id == _PANIC_SAME_DAY_REBUY_STRATEGY_ID
+
+        executed_closed, not_traded_rows, portfolio_summary = simulate_single_slot_portfolio(
+            closed_for_slot,
+            position_size=position_amount,
+            initial_principal=position_amount,
+            initial_reserve=reserve_amount,
+            allow_rebuy_same_day_as_prior_sell=allow_same_day_rebuy,
+        )
+        combined = executed_closed + not_traded_rows + unclosed_kept
+
+        _type_order = {"closed": 0, "not_traded": 1, "unclosed": 2}
+
+        def _persist_sort_key(t: BacktestTrade) -> tuple:
+            return (t.buy_date, _type_order.get(t.trade_type, 9), t.stock_code or "")
+
+        enriched_trades = sorted(combined, key=_persist_sort_key)
 
         for trade in enriched_trades:
             db.add(BacktestTradeModel(
@@ -117,30 +143,60 @@ def run_backtest(
         temp_stats = calculate_temp_level_stats(enriched_trades)
         exchange_stats = calculate_exchange_stats(enriched_trades)
         market_stats = calculate_market_stats(enriched_trades)
-        conclusion = generate_conclusion(report.total_return, start_date, end_date)
+
+        headline_return = float(portfolio_summary.total_return_on_initial_total)
+        conclusion = generate_conclusion(
+            headline_return,
+            start_date,
+            end_date,
+            portfolio=portfolio_summary,
+        )
 
         task.status = "completed" if report.unclosed_count == 0 else "incomplete"
         task.total_trades = report.total_trades
         task.win_trades = report.win_trades
         task.lose_trades = report.lose_trades
         task.win_rate = report.win_rate
-        task.total_return = report.total_return
+        task.total_return = headline_return
         task.avg_return = report.avg_return
         task.max_win = report.max_win
         task.max_loss = report.max_loss
         task.unclosed_count = report.unclosed_count
         task.skipped_count = result.skipped_count
-        task.assumptions_json = {
+
+        assumptions_base: dict = {
             "price_type": "日线开盘价/收盘价",
             "data_source": "tushare",
             "fee_model": "无手续费",
-            "position_model": "单笔独立计算",
             "conclusion": conclusion,
             "temp_level_stats": temp_stats,
             "exchange_stats": exchange_stats,
             "market_stats": market_stats,
             "skip_reasons": result.skip_reasons,
+            "portfolio_simulation_applied": True,
+            "portfolio_calendar_allow_same_day_rebuy_after_sell": allow_same_day_rebuy,
+            "simple_sum_return_closed": float(sum(t.return_rate or 0 for t in closed_for_slot)),
         }
+
+        cal_rule = (
+            "恐慌回落法：卖出当日收盘可再开仓他股。"
+            if allow_same_day_rebuy
+            else "本策略：须上一笔卖出日次日及以后方可再买（卖出当日不得换股）。"
+        )
+        assumptions_base["position_model"] = (
+            f"单仓位+补仓池仿真。持仓 {position_amount:,.0f} 元/笔；补仓池初始 {reserve_amount:,.0f} 元；"
+            f"同一买入日仅成交一笔；{cal_rule}"
+            "开仓前本金不足持仓额时由补仓池划入；平仓盈利进补仓池，本金名义回现金，亏损全额回现金。"
+        )
+        assumptions_base["portfolio_params"] = {
+            "position_amount": position_amount,
+            "reserve_amount": reserve_amount,
+        }
+        assumptions_base["portfolio_capital"] = portfolio_summary.to_json_dict()
+        assumptions_base["strategy_raw_closed_count"] = portfolio_summary.strategy_raw_closed_count
+        assumptions_base["portfolio_skipped_closed_count"] = portfolio_summary.skipped_closed_count
+
+        task.assumptions_json = assumptions_base
         task.finished_at = datetime.now()
 
         db.commit()

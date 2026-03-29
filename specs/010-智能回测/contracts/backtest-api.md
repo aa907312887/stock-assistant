@@ -1,6 +1,6 @@
 # 接口契约：智能回测 API
 
-**日期**: 2026-03-26 | **路由前缀**: `/api/backtest`
+**日期**: 2026-03-26（2026-03-29 修订：`report.portfolio_capital`、总收益率资金口径）| **路由前缀**: `/api/backtest`
 
 所有接口挂载在 `backend/app/api/backtest.py` 路由模块下，通过 `app/main.py` 注册。
 
@@ -18,7 +18,9 @@
 {
   "strategy_id": "chong_gao_hui_luo",
   "start_date": "2024-01-01",
-  "end_date": "2024-12-31"
+  "end_date": "2024-12-31",
+  "position_amount": 100000,
+  "reserve_amount": 100000
 }
 ```
 
@@ -27,6 +29,8 @@
 | `strategy_id` | string | 是 | 策略标识（如 `chong_gao_hui_luo`、`panic_pullback`） |
 | `start_date` | string (YYYY-MM-DD) | 是 | 回测起始日期 |
 | `end_date` | string (YYYY-MM-DD) | 是 | 回测结束日期 |
+| `position_amount` | number | 否 | 持仓金额（元），默认 `100000`；每笔固定名义本金，初始可操作现金等于该值；须 > 0 |
+| `reserve_amount` | number | 否 | 补仓金额（元），默认 `100000`；预备资金池初始额度，本金不足持仓额时从此池划入，用尽则不再补仓；可填 `0` |
 
 ### 响应（202 Accepted）
 
@@ -173,13 +177,28 @@
         "win_rate": 0.5000,
         "avg_return": 0.0022
       }
-    ]
+    ],
+    "portfolio_capital": {
+      "position_size": 100000,
+      "initial_principal": 100000,
+      "initial_reserve": 100000,
+      "final_principal": 108200,
+      "final_reserve": 100000,
+      "total_wealth_end": 208200,
+      "total_profit": 8200,
+      "total_return_on_initial_total": 0.041,
+      "strategy_raw_closed_count": 120,
+      "executed_closed_count": 87,
+      "skipped_closed_count": 33,
+      "same_day_not_traded_count": 12,
+      "description": "单仓位 10 万：同日仅一笔；卖出日后方可再买入；本金不足时由预备池补足至 10 万后再开仓"
+    }
   },
   "assumptions": {
     "price_type": "日线开盘价/收盘价",
     "data_source": "tushare",
     "fee_model": "无手续费",
-    "position_model": "单笔独立计算"
+    "position_model": "单仓位 10 万：同一买入日仅成交一笔；卖出日后方可再开仓；本金不足时由预备金池（初始 10 万）补足后再开仓"
   },
   "created_at": "2026-03-26T14:30:00",
   "finished_at": "2026-03-26T14:33:42"
@@ -204,7 +223,7 @@
 
 | 参数 | 类型 | 必填 | 默认值 | 说明 |
 |------|------|------|--------|------|
-| `trade_type` | string | 否 | - | 筛选交易类型：`closed` / `unclosed`；不传则返回全部 |
+| `trade_type` | string | 否 | - | 筛选交易类型：`closed`（已成交平仓）/ `not_traded`（选中未交易）/ `unclosed`（未平仓）；不传则返回全部 |
 | `market_temp_level` | string | 否 | - | **兼容**：单个大盘温度级别 |
 | `market` | string | 否 | - | **兼容**：单个板块 |
 | `exchange` | string | 否 | - | **兼容**：单个交易所 |

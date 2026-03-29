@@ -5,9 +5,20 @@
         <span class="title">回测结果详情</span>
         <el-tooltip placement="top">
           <template #content>
-            <div style="max-width: 320px">
-              绩效指标基于已平仓交易计算。收益率 = 各笔 (卖出价 - 买入价) / 买入价 之和，不含手续费与复利。<br/>
-              大盘温度统计展示不同市场温度下的策略表现差异。
+            <div v-if="detail?.report?.portfolio_capital" style="max-width: 340px">
+              本任务已启用<strong>单仓位+补仓池</strong>资金仿真：总收益率按初始「持仓本金+补仓池」合计相对盈亏；同日全市场仅一笔；盈利进补仓池，开仓前不足由补仓池补足。<br/>
+              <template v-if="detail.report.portfolio_capital.allow_rebuy_same_day_as_prior_sell !== false">
+                当前为<strong>恐慌回落法</strong>日历：允许上一笔<strong>卖出当日</strong>再按收盘价买入另一只标的。<br/>
+              </template>
+              <template v-else>
+                当前策略日历：<strong>须上一笔卖出日次日及以后</strong>才能再开仓（卖出当日不得换股）。<br/>
+              </template>
+              胜率、平均收益、最大盈亏等按落库已平仓成交笔数统计；不含手续费与复利。<br/>
+              大盘温度统计展示不同市场温度下的表现差异。
+            </div>
+            <div v-else style="max-width: 340px">
+              本任务结果中无资金仿真摘要（可能为较早记录或未完成）。总收益率等以接口返回为准。<br/>
+              胜率、平均收益、最大盈亏等按已平仓笔数统计；不含手续费与复利。
             </div>
           </template>
           <el-icon class="hint-icon"><QuestionFilled /></el-icon>
@@ -21,13 +32,100 @@
     </template>
 
     <template v-else-if="detail && detail.report">
-      <template v-if="detail.report.total_trades === 0">
+      <template v-if="!showReportBody">
         <el-empty description="该时间范围内无符合策略条件的交易" />
       </template>
       <template v-else>
         <!-- 盈亏结论 -->
         <div class="conclusion-banner" :class="detail.report.total_return >= 0 ? 'positive' : 'negative'">
           {{ detail.report.conclusion }}
+        </div>
+
+        <div v-if="detail.report.portfolio_capital" class="section portfolio-capital">
+          <h4 class="section-title">
+            资金账户（仓位约束）
+            <el-tooltip placement="top">
+              <template #content>
+                <div style="max-width: 320px">{{ detail.report.portfolio_capital.description }}</div>
+              </template>
+              <el-icon class="hint-icon-sm"><QuestionFilled /></el-icon>
+            </el-tooltip>
+          </h4>
+          <div class="metrics-grid portfolio-grid">
+            <div class="metric-item">
+              <div class="metric-label">持仓金额/笔</div>
+              <div class="metric-value">{{ fmtMoney(detail.report.portfolio_capital.position_size) }}</div>
+            </div>
+            <div class="metric-item">
+              <div class="metric-label">初始补仓池</div>
+              <div class="metric-value">{{ fmtMoney(detail.report.portfolio_capital.initial_reserve) }}</div>
+            </div>
+            <div class="metric-item">
+              <div class="metric-label">策略闭仓信号</div>
+              <div class="metric-value">{{ detail.report.portfolio_capital.strategy_raw_closed_count }}</div>
+            </div>
+            <div class="metric-item">
+              <div class="metric-label">实际成交（已平仓）</div>
+              <div class="metric-value">{{ detail.report.portfolio_capital.executed_closed_count }}</div>
+            </div>
+            <div class="metric-item">
+              <div class="metric-label">因仓位规则跳过</div>
+              <div class="metric-value">{{ detail.report.portfolio_capital.skipped_closed_count }}</div>
+            </div>
+            <div class="metric-item">
+              <div class="metric-label">同日选中未交易</div>
+              <div class="metric-value">{{ detail.report.portfolio_capital.same_day_not_traded_count ?? 0 }}</div>
+            </div>
+            <div class="metric-item">
+              <div class="metric-label">
+                日历冲突未交易
+                <el-tooltip placement="top">
+                  <template #content>
+                    <div style="max-width: 300px">
+                      <template v-if="detail.report.portfolio_capital.allow_rebuy_same_day_as_prior_sell !== false">
+                        买入日早于上一笔卖出日（与上一笔持仓重叠）不成交；<strong>卖出当日可再买他股</strong>（恐慌口径）。
+                      </template>
+                      <template v-else>
+                        买入日早于或等于上一笔卖出日均不成交：须<strong>卖出日次日及以后</strong>才能再开仓。
+                      </template>
+                    </div>
+                  </template>
+                  <el-icon class="hint-icon-sm"><QuestionFilled /></el-icon>
+                </el-tooltip>
+              </div>
+              <div class="metric-value">{{ detail.report.portfolio_capital.before_previous_sell_not_traded_count ?? 0 }}</div>
+            </div>
+            <div class="metric-item">
+              <div class="metric-label">
+                资金不足未交易
+                <el-tooltip content="本金+补仓池仍凑不齐持仓额，该笔跳过；仿真会继续扫描后续全部信号" placement="top">
+                  <el-icon class="hint-icon-sm"><QuestionFilled /></el-icon>
+                </el-tooltip>
+              </div>
+              <div class="metric-value">{{ detail.report.portfolio_capital.insufficient_funds_not_traded_count ?? 0 }}</div>
+            </div>
+            <div class="metric-item">
+              <div class="metric-label">期末本金账户</div>
+              <div class="metric-value">{{ fmtMoney(detail.report.portfolio_capital.final_principal) }}</div>
+            </div>
+            <div class="metric-item">
+              <div class="metric-label">期末补仓池余额</div>
+              <div class="metric-value">{{ fmtMoney(detail.report.portfolio_capital.final_reserve) }}</div>
+            </div>
+            <div class="metric-item">
+              <div class="metric-label">期末合计权益</div>
+              <div class="metric-value">{{ fmtMoney(detail.report.portfolio_capital.total_wealth_end) }}</div>
+            </div>
+            <div class="metric-item">
+              <div class="metric-label">盈亏金额（相对初始合计）</div>
+              <div
+                class="metric-value"
+                :class="detail.report.portfolio_capital.total_profit >= 0 ? 'profit' : 'loss'"
+              >
+                {{ detail.report.portfolio_capital.total_profit >= 0 ? '+' : '' }}{{ fmtMoney(detail.report.portfolio_capital.total_profit) }}
+              </div>
+            </div>
+          </div>
         </div>
 
         <!-- 核心指标网格 -->
@@ -42,7 +140,20 @@
           </div>
           <div class="metric-item">
             <div class="metric-label">总收益率</div>
-            <div class="metric-value" :class="detail.report.total_return >= 0 ? 'profit' : 'loss'">
+            <el-tooltip
+              v-if="detail.report.portfolio_capital"
+              content="相对初始「持仓本金 + 补仓池」合计的收益率（资金仿真口径）"
+              placement="top"
+            >
+              <div class="metric-value" :class="detail.report.total_return >= 0 ? 'profit' : 'loss'">
+                {{ detail.report.total_return >= 0 ? '+' : '' }}{{ (detail.report.total_return * 100).toFixed(2) }}%
+              </div>
+            </el-tooltip>
+            <div
+              v-else
+              class="metric-value"
+              :class="detail.report.total_return >= 0 ? 'profit' : 'loss'"
+            >
               {{ detail.report.total_return >= 0 ? '+' : '' }}{{ (detail.report.total_return * 100).toFixed(2) }}%
             </div>
           </div>
@@ -256,6 +367,54 @@
                 <span v-else>-</span>
               </template>
             </el-table-column>
+            <el-table-column width="108" align="right">
+              <template #header>
+                <span>盈亏(元)</span>
+                <el-tooltip
+                  content="已平仓且经仓位仿真：持仓名义×收益率；盈利为正、亏损为负"
+                  placement="top"
+                >
+                  <el-icon class="hint-icon-sm"><QuestionFilled /></el-icon>
+                </el-tooltip>
+              </template>
+              <template #default="{ row }">
+                <span
+                  v-if="row.trade_type === 'closed' && row.extra?.trade_pnl_yuan != null"
+                  :class="row.extra.trade_pnl_yuan >= 0 ? 'profit' : 'loss'"
+                >
+                  {{ row.extra.trade_pnl_yuan >= 0 ? '+' : '' }}{{ fmtYuan(row.extra.trade_pnl_yuan) }}
+                </span>
+                <span v-else class="cell-muted">-</span>
+              </template>
+            </el-table-column>
+            <el-table-column width="108" align="right">
+              <template #header>
+                <span>补仓划入(元)</span>
+                <el-tooltip content="本笔开仓前从补仓池划入本金、用于凑齐持仓金额的数额" placement="top">
+                  <el-icon class="hint-icon-sm"><QuestionFilled /></el-icon>
+                </el-tooltip>
+              </template>
+              <template #default="{ row }">
+                <span v-if="row.trade_type === 'closed' && row.extra?.reserve_used_before_open_yuan != null">
+                  {{ fmtYuan(row.extra.reserve_used_before_open_yuan) }}
+                </span>
+                <span v-else class="cell-muted">-</span>
+              </template>
+            </el-table-column>
+            <el-table-column width="118" align="right">
+              <template #header>
+                <span>补仓池余额(元)</span>
+                <el-tooltip content="本笔卖出结算后补仓池剩余（盈利已计入池内）" placement="top">
+                  <el-icon class="hint-icon-sm"><QuestionFilled /></el-icon>
+                </el-tooltip>
+              </template>
+              <template #default="{ row }">
+                <span v-if="row.trade_type === 'closed' && row.extra?.reserve_balance_after_sell_yuan != null">
+                  {{ fmtYuan(row.extra.reserve_balance_after_sell_yuan) }}
+                </span>
+                <span v-else class="cell-muted">-</span>
+              </template>
+            </el-table-column>
             <el-table-column label="交易所" width="90">
               <template #default="{ row }">{{ row.exchange || '-' }}</template>
             </el-table-column>
@@ -265,11 +424,25 @@
             <el-table-column label="温度" width="70">
               <template #default="{ row }">{{ row.market_temp_level || '-' }}</template>
             </el-table-column>
-            <el-table-column prop="trade_type" label="类型" width="80">
+            <el-table-column prop="trade_type" label="类型" width="108">
               <template #default="{ row }">
-                <el-tag :type="row.trade_type === 'closed' ? 'success' : 'warning'" size="small">
-                  {{ row.trade_type === 'closed' ? '已平仓' : '未平仓' }}
-                </el-tag>
+                <el-tag
+                  v-if="row.trade_type === 'closed'"
+                  type="success"
+                  size="small"
+                >已平仓</el-tag>
+                <el-tag
+                  v-else-if="row.trade_type === 'not_traded'"
+                  type="info"
+                  size="small"
+                >选中未交易</el-tag>
+                <el-tag v-else type="warning" size="small">未平仓</el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column label="未交易原因" width="130">
+              <template #default="{ row }">
+                <span v-if="row.trade_type === 'not_traded'">{{ skipReasonLabel(row.extra) }}</span>
+                <span v-else class="cell-muted">-</span>
               </template>
             </el-table-column>
           </el-table>
@@ -374,6 +547,39 @@ defineEmits<{
 }>()
 
 const detail = ref<BacktestTaskDetailResponse | null>(null)
+
+/** 展示千分位整数金额（元） */
+function fmtMoney(n: number): string {
+  return n.toLocaleString('zh-CN', { maximumFractionDigits: 0 })
+}
+
+/** 明细中的元（可带两位小数） */
+function fmtYuan(n: number): string {
+  return n.toLocaleString('zh-CN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })
+}
+
+const SKIP_REASON_LABEL: Record<string, string> = {
+  same_buy_day: '同日仅一笔',
+  before_previous_sell: '早于上一笔卖出日',
+  insufficient_funds: '资金不足',
+}
+
+function skipReasonLabel(extra: Record<string, unknown> | null | undefined): string {
+  const r = extra?.skip_reason
+  if (typeof r !== 'string' || !r) return '-'
+  return SKIP_REASON_LABEL[r] ?? r
+}
+
+/** 有已落库交易、未平仓、或存在被仓位规则挡住的闭仓信号时展示报告主体 */
+const showReportBody = computed(() => {
+  const r = detail.value?.report
+  if (!r) return false
+  const pc = r.portfolio_capital
+  if (r.total_trades > 0 || r.unclosed_count > 0) return true
+  if (pc != null && pc.strategy_raw_closed_count > 0) return true
+  return false
+})
+
 const loading = ref(false)
 const trades = ref<BacktestTradeItem[]>([])
 const filteredMetrics = ref<BacktestFilteredMetrics | null>(null)
@@ -657,6 +863,10 @@ watch(() => props.taskId, loadDetail, { immediate: true })
   gap: 8px;
   align-items: center;
   flex-wrap: wrap;
+}
+
+.cell-muted {
+  color: #c0c4cc;
 }
 
 .filtered-summary {

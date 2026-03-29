@@ -40,7 +40,7 @@
 - **sell_date**：次日 \(t+1\)
 - **sell_price**：次日收盘价
 - **return_rate**：单笔收益率 \((sell - buy) / buy\)
-- **trade_type**：`closed` / `unclosed`
+- **trade_type**：`closed` / `not_traded`（同日选中未交易）/ `unclosed`
 - **exchange**、**market**、**market_temp_level**、**market_temp_score**：用于筛选与分组统计
 - **extra_json**：策略扩展字段（如触发相关数值）
 

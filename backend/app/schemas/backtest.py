@@ -11,6 +11,18 @@ class RunBacktestRequest(BaseModel):
     strategy_id: str
     start_date: date
     end_date: date
+    position_amount: float = Field(
+        default=100_000.0,
+        gt=0,
+        le=1_000_000_000,
+        description="持仓金额（元）：每笔固定名义本金；初始可操作现金等于该值。",
+    )
+    reserve_amount: float = Field(
+        default=100_000.0,
+        ge=0,
+        le=1_000_000_000,
+        description="补仓金额（元）：预备资金池初始额度；本金不足持仓额时从此池划入，用尽则不再补仓。",
+    )
 
 
 class RunBacktestResponse(BaseModel):
@@ -57,6 +69,27 @@ class DimensionStat(BaseModel):
     avg_return: float
 
 
+class PortfolioCapitalOut(BaseModel):
+    """单仓位 + 预备金模型下的资金结果（与 assumptions_json.portfolio_capital 一致）。"""
+
+    position_size: float
+    initial_principal: float
+    initial_reserve: float
+    final_principal: float
+    final_reserve: float
+    total_wealth_end: float
+    total_profit: float
+    total_return_on_initial_total: float
+    strategy_raw_closed_count: int
+    executed_closed_count: int
+    skipped_closed_count: int
+    same_day_not_traded_count: int = 0
+    before_previous_sell_not_traded_count: int = 0
+    insufficient_funds_not_traded_count: int = 0
+    allow_rebuy_same_day_as_prior_sell: bool = True
+    description: str
+
+
 class BacktestReport(BaseModel):
     total_trades: int
     win_trades: int
@@ -72,6 +105,7 @@ class BacktestReport(BaseModel):
     temp_level_stats: list[TempLevelStat] = Field(default_factory=list)
     exchange_stats: list[DimensionStat] = Field(default_factory=list)
     market_stats: list[DimensionStat] = Field(default_factory=list)
+    portfolio_capital: PortfolioCapitalOut | None = None
 
 
 class BacktestTaskDetailResponse(BaseModel):

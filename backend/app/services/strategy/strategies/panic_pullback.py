@@ -5,8 +5,9 @@
 【目标】：在下跌趋势中寻找“恐慌加速日”，并用固定持有 1 个交易日的口径验证次日是否存在修复收益。
 【适用范围】：
 - 市场：A 股
+- 股票范围：**仅创业板**（`stock_basic.market == "创业板"`；非创业板或板块为空不参与扫描）
 - 数据粒度：日线（无分时数据）
-- 依赖字段：open / close / volume / trade_date（来自 stock_daily_bar），以及 stock_basic.name
+- 依赖字段：open / close / volume / trade_date（来自 stock_daily_bar），以及 stock_basic.name、stock_basic.market
 
 【核心规则】：
 1) 触发（第 0 天=T）：
@@ -33,6 +34,7 @@
 
 【输出与可追溯性】：
 - 回测输出：BacktestTrade 列表；extra 中记录触发日与关键计算值，便于复盘。
+- 与智能回测资金仿真衔接（仅本策略启用）：允许 **卖出当日** 再按收盘价买入**另一只**触发标的（对应下午卖、下午买别的的日线近似）；单仓位、同日仅一笔等由引擎统一处理。
 
 【示例】：
 - 例 1（满足触发）：
@@ -79,9 +81,13 @@ class _Params:
     volume_k: float = 1.5
 
 
+# 板块筛选：与 stock_basic.market 入库值一致（见 003 股票基本信息）
+_CYB_MARKET = "创业板"
+
+
 class PanicPullbackStrategy(StockStrategy):
     strategy_id = "panic_pullback"
-    version = "v1.0.0"
+    version = "v1.1.0"
 
     def describe(self) -> StrategyDescriptor:
         return StrategyDescriptor(
@@ -90,10 +96,11 @@ class PanicPullbackStrategy(StockStrategy):
             version=self.version,
             short_description="在下跌趋势中识别恐慌加速日，并用固定 T+1 收盘卖出口径回测验证。",
             description=(
-                "本策略在 A 股日线数据上识别“均线空头排列 + 近期连续下跌 + 当日大幅低开且大跌 + 放量出清”的恐慌日，"
+                "本策略在 **创业板** 日线数据上识别“均线空头排列 + 近期连续下跌 + 当日大幅低开且大跌 + 放量出清”的恐慌日，"
                 "并以“触发日收盘买入、次日收盘卖出（无论盈亏）”的固定持有口径做历史回测验证。"
             ),
             assumptions=[
+                "仅交易创业板股票（stock_basic.market 为「创业板」）；板块缺失或非创业板一律不扫描。",
                 "当前仅有日线数据，买入与卖出均以收盘价近似，忽略分时成交与滑点。",
                 "成交量口径采用日线 volume 字段，放量判定为：volume_T > max(volume_{T-1..T-5}) 且 volume_T >= 1.5 * avg(volume_{T-1..T-5})。",
                 "本策略用于历史验证，不构成任何投资建议。",
@@ -124,6 +131,7 @@ class PanicPullbackStrategy(StockStrategy):
                     "data_granularity": "日线",
                     "price_type": "收盘价口径（回测用）",
                     "no_intraday_data": True,
+                    "stock_universe": f"仅{_CYB_MARKET}（stock_basic.market）",
                 },
                 params={
                     "ma_short": params.ma_short,
@@ -172,16 +180,22 @@ class PanicPullbackStrategy(StockStrategy):
         rows = db.execute(stmt).all()
         logger.info("恐慌回落法回测数据加载完成: %d 条日线记录", len(rows))
 
-        stock_info: dict[str, str | None] = dict(db.query(StockBasic.code, StockBasic.name).all())
+        stock_rows = db.query(StockBasic.code, StockBasic.name, StockBasic.market).all()
+        stock_info: dict[str, str | None] = {r.code: r.name for r in stock_rows}
         st_codes = {
-            code for code, name in stock_info.items()
-            if name and (name.startswith("ST") or name.startswith("*ST"))
+            r.code for r in stock_rows
+            if r.name and (r.name.startswith("ST") or r.name.startswith("*ST"))
         }
+        cyb_codes = {r.code for r in stock_rows if r.market == _CYB_MARKET}
+        logger.info("恐慌回落法：创业板可交易代码数=%d（全市场基础信息=%d）", len(cyb_codes), len(stock_rows))
 
         stock_bars: dict[str, list[Any]] = defaultdict(list)
         for row in rows:
-            if row.stock_code not in st_codes:
-                stock_bars[row.stock_code].append(row)
+            if row.stock_code in st_codes:
+                continue
+            if row.stock_code not in cyb_codes:
+                continue
+            stock_bars[row.stock_code].append(row)
 
         all_market_dates = sorted({row.trade_date for row in rows})
         market_next: dict[date, date] = {}

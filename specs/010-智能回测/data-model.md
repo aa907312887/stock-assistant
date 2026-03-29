@@ -65,7 +65,7 @@ running → failed     （执行过程异常）
 | `sell_date` | DATE | NULL | 卖出日期（未平仓时为 NULL） |
 | `sell_price` | DECIMAL(12,4) | NULL | 卖出价格（未平仓时为 NULL） |
 | `return_rate` | DECIMAL(12,4) | NULL | 单笔收益率（(sell_price - buy_price) / buy_price），未平仓时为 NULL |
-| `trade_type` | VARCHAR(16) | NOT NULL, DEFAULT 'closed' | 交易类型：`closed`（正常平仓）/ `unclosed`（未平仓） |
+| `trade_type` | VARCHAR(16) | NOT NULL, DEFAULT 'closed' | 交易类型：`closed`（实际成交平仓）/ `not_traded`（同日选中未交易）/ `unclosed`（未平仓） |
 | `exchange` | VARCHAR(10) | NULL | 交易所：SSE/SZSE/BSE（来自 `stock_basic.exchange`） |
 | `market` | VARCHAR(20) | NULL | 板块：主板/创业板/科创板/北交所等（来自 `stock_basic.market`） |
 | `market_temp_score` | DECIMAL(5,2) | NULL | 买入日当天的大盘温度分数（关联 `market_temperature_daily`） |

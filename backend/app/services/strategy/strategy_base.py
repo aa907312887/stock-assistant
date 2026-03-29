@@ -64,7 +64,7 @@ class BacktestTrade:
     sell_date: date | None = None
     sell_price: float | None = None
     return_rate: float | None = None
-    trade_type: str = "closed"
+    trade_type: str = "closed"  # closed=实际成交平仓；not_traded=引擎标注的选中未交易；unclosed=未平仓
     exchange: str | None = None
     market: str | None = None
     market_temp_score: float | None = None

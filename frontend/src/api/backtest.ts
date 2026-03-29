@@ -4,6 +4,10 @@ export type RunBacktestRequest = {
   strategy_id: string
   start_date: string
   end_date: string
+  /** 持仓金额（元），默认 10 万 */
+  position_amount?: number
+  /** 补仓金额 / 预备池（元），默认 10 万；可为 0 表示不补仓 */
+  reserve_amount?: number
 }
 
 export type RunBacktestResponse = {
@@ -42,6 +46,26 @@ export type TempLevelStat = {
   avg_return: number
 }
 
+export type PortfolioCapitalOut = {
+  position_size: number
+  initial_principal: number
+  initial_reserve: number
+  final_principal: number
+  final_reserve: number
+  total_wealth_end: number
+  total_profit: number
+  total_return_on_initial_total: number
+  strategy_raw_closed_count: number
+  executed_closed_count: number
+  skipped_closed_count: number
+  same_day_not_traded_count?: number
+  before_previous_sell_not_traded_count?: number
+  insufficient_funds_not_traded_count?: number
+  /** false 表示非恐慌策略：卖出当日不得换股 */
+  allow_rebuy_same_day_as_prior_sell?: boolean
+  description: string
+}
+
 export type BacktestReport = {
   total_trades: number
   win_trades: number
@@ -57,6 +81,7 @@ export type BacktestReport = {
   temp_level_stats: TempLevelStat[]
   exchange_stats: { name: string; total: number; wins: number; win_rate: number; avg_return: number }[]
   market_stats: { name: string; total: number; wins: number; win_rate: number; avg_return: number }[]
+  portfolio_capital?: PortfolioCapitalOut | null
 }
 
 export type BacktestTaskDetailResponse = {

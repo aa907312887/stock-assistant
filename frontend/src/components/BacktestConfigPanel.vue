@@ -22,6 +22,48 @@
           />
         </el-select>
       </el-form-item>
+      <el-form-item>
+        <template #label>
+          <span>持仓金额(元)</span>
+          <el-tooltip placement="top">
+            <template #content>
+              <div style="max-width: 280px">
+                每笔目标名义本金（全仓一只）。<strong>所有策略</strong>回测均按此金额参与单仓位资金仿真；亏损后下次开仓前由补仓池补足至该金额（用尽则可能跳过）。
+              </div>
+            </template>
+            <el-icon class="hint-icon label-hint"><QuestionFilled /></el-icon>
+          </el-tooltip>
+        </template>
+        <el-input-number
+          v-model="form.position_amount"
+          :min="1"
+          :max="1000000000"
+          :step="10000"
+          :controls="true"
+          style="width: 160px"
+        />
+      </el-form-item>
+      <el-form-item>
+        <template #label>
+          <span>补仓金额(元)</span>
+          <el-tooltip placement="top">
+            <template #content>
+              <div style="max-width: 280px">
+                补仓池初始额度；开仓前现金不足时划入，盈利可回流池中。<strong>仅恐慌回落法</strong>在日历上允许「卖出当日再买入他股」；其它策略须卖出日次日及以后才能再开仓。
+              </div>
+            </template>
+            <el-icon class="hint-icon label-hint"><QuestionFilled /></el-icon>
+          </el-tooltip>
+        </template>
+        <el-input-number
+          v-model="form.reserve_amount"
+          :min="0"
+          :max="1000000000"
+          :step="10000"
+          :controls="true"
+          style="width: 160px"
+        />
+      </el-form-item>
       <el-form-item label="开始日期">
         <el-date-picker
           v-model="form.start_date"
@@ -67,7 +109,13 @@ const emit = defineEmits<{
 
 const strategies = ref<StrategySummary[]>([])
 const dataRange = reactive({ min_date: '', max_date: '' })
-const form = reactive({ strategy_id: '', start_date: '', end_date: '' })
+const form = reactive({
+  strategy_id: '',
+  start_date: '',
+  end_date: '',
+  position_amount: 100_000,
+  reserve_amount: 100_000,
+})
 const loading = ref(false)
 
 onMounted(async () => {
@@ -117,6 +165,14 @@ async function handleStart() {
     ElMessage.warning('请选择完整的时间范围')
     return
   }
+  if (form.position_amount == null || form.position_amount < 1) {
+    ElMessage.warning('持仓金额须大于 0')
+    return
+  }
+  if (form.reserve_amount == null || form.reserve_amount < 0) {
+    ElMessage.warning('补仓金额不能为负')
+    return
+  }
 
   loading.value = true
   try {
@@ -124,6 +180,8 @@ async function handleStart() {
       strategy_id: form.strategy_id,
       start_date: form.start_date,
       end_date: form.end_date,
+      position_amount: form.position_amount,
+      reserve_amount: form.reserve_amount,
     })
     ElMessage.success('回测任务已创建，后台执行中')
     emit('backtest-started')
@@ -149,6 +207,10 @@ async function handleStart() {
 .hint-icon {
   color: #909399;
   cursor: pointer;
+}
+.label-hint {
+  margin-left: 4px;
+  vertical-align: middle;
 }
 .config-form {
   display: flex;

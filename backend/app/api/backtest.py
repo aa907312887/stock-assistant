@@ -33,6 +33,7 @@ from app.schemas.backtest import (
     BacktestTradeItem,
     BacktestTradeListResponse,
     DataRangeResponse,
+    PortfolioCapitalOut,
     RunBacktestRequest,
     RunBacktestResponse,
     TempLevelStat,
@@ -186,6 +187,8 @@ def api_run_backtest(body: RunBacktestRequest, db: Session = Depends(get_db)):
                 strategy_id=body.strategy_id,
                 start_date=body.start_date,
                 end_date=body.end_date,
+                position_amount=float(body.position_amount),
+                reserve_amount=float(body.reserve_amount),
             )
         except Exception as e:
             logger.exception("回测后台线程异常: task_id=%s", task_id)
@@ -262,6 +265,14 @@ def api_get_backtest_task(task_id: str, db: Session = Depends(get_db)):
         market_stats = [DimensionStat(**s) for s in market_stats_raw]
         conclusion = assumptions_json.get("conclusion", "")
 
+        portfolio_capital = None
+        pc_raw = assumptions_json.get("portfolio_capital")
+        if isinstance(pc_raw, dict):
+            try:
+                portfolio_capital = PortfolioCapitalOut(**pc_raw)
+            except Exception:
+                logger.warning("task_id=%s portfolio_capital 解析失败，已忽略", task.task_id)
+
         report = BacktestReport(
             total_trades=task.total_trades or 0,
             win_trades=task.win_trades or 0,
@@ -277,10 +288,25 @@ def api_get_backtest_task(task_id: str, db: Session = Depends(get_db)):
             temp_level_stats=temp_stats,
             exchange_stats=exchange_stats,
             market_stats=market_stats,
+            portfolio_capital=portfolio_capital,
         )
         assumptions = {
             k: v for k, v in assumptions_json.items()
-            if k not in ("conclusion", "temp_level_stats", "exchange_stats", "market_stats", "skip_reasons")
+            if k
+            not in (
+                "conclusion",
+                "temp_level_stats",
+                "exchange_stats",
+                "market_stats",
+                "skip_reasons",
+                "portfolio_capital",
+                "strategy_raw_closed_count",
+                "portfolio_skipped_closed_count",
+                "simple_sum_return_closed",
+                "portfolio_params",
+                "portfolio_simulation_applied",
+                "portfolio_calendar_allow_same_day_rebuy_after_sell",
+            )
         }
 
     return BacktestTaskDetailResponse(
@@ -301,7 +327,10 @@ def api_get_backtest_task(task_id: str, db: Session = Depends(get_db)):
 @router.get("/tasks/{task_id}/trades", response_model=BacktestTradeListResponse)
 def api_get_backtest_trades(
     task_id: str,
-    trade_type: str | None = Query(default=None),
+    trade_type: str | None = Query(
+        default=None,
+        description="closed=已成交平仓；not_traded=选中未交易；unclosed=未平仓",
+    ),
     market_temp_level: str | None = Query(default=None, description="兼容旧参数：单个温度级别"),
     market: str | None = Query(default=None, description="兼容旧参数：单个板块"),
     exchange: str | None = Query(default=None, description="兼容旧参数：单个交易所"),

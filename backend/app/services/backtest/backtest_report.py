@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date
 
+from app.services.backtest.portfolio_simulation import PortfolioCapitalSummary
 from app.services.strategy.strategy_base import BacktestTrade
 
 
@@ -113,8 +114,41 @@ def calculate_market_stats(trades: list[BacktestTrade]) -> list[dict]:
     return _calculate_group_stats(trades, lambda t: t.market)
 
 
-def generate_conclusion(total_return: float, start_date: date, end_date: date) -> str:
-    """根据总收益率生成盈亏结论文案。"""
+def generate_conclusion(
+    total_return: float,
+    start_date: date,
+    end_date: date,
+    *,
+    portfolio: PortfolioCapitalSummary | None = None,
+) -> str:
+    """根据总收益率生成盈亏结论文案；若提供 portfolio 则按资金约束口径描述权益与双账户余额。"""
+    if portfolio is not None:
+        if portfolio.executed_closed_count == 0 and portfolio.strategy_raw_closed_count > 0:
+            pa = portfolio.position_size
+            cal = (
+                "同日仅一笔，且早于上一笔卖出日不可买（恐慌口径下卖出当日可再买他股）"
+                if portfolio.allow_rebuy_same_day_as_prior_sell
+                else "同日仅一笔，且须上一笔卖出日之后方可买（卖出当日不得换股）"
+            )
+            return (
+                f"该策略在 {start_date} 至 {end_date} 期间共产生 "
+                f"{portfolio.strategy_raw_closed_count} 笔可平仓信号，但在持仓 {pa:,.0f} 元、"
+                f"{cal} 的约束下实际成交 0 笔；本金与补仓池未动用，"
+                f"合计权益仍为 {portfolio.initial_principal + portfolio.initial_reserve:,.0f} 元。"
+            )
+        tp = portfolio.total_profit
+        r = portfolio.total_return_on_initial_total
+        if tp > 0:
+            profit_part = f"合计权益较初始增加约 {tp:,.0f} 元（相对本金+预备金合计收益率 {r:+.2%}）"
+        elif tp < 0:
+            profit_part = f"合计权益较初始减少约 {abs(tp):,.0f} 元（相对本金+预备金合计收益率 {r:+.2%}）"
+        else:
+            profit_part = f"合计权益与初始持平（收益率 {r:+.2%}）"
+        pa = portfolio.position_size
+        return (
+            f"该策略在 {start_date} 至 {end_date} 期间，按持仓 {pa:,.0f} 元/笔、补仓池补仓规则模拟："
+            f"{profit_part}；期末本金账户约 {portfolio.final_principal:,.0f} 元，补仓资金池约 {portfolio.final_reserve:,.0f} 元。"
+        )
     if total_return > 0:
         return f"该策略在 {start_date} 至 {end_date} 期间总体盈利 {total_return:.2%}"
     elif total_return < 0:
