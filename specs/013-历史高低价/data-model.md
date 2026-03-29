@@ -1,4 +1,4 @@
-# 数据模型：历史高低价（Phase 1）
+# 数据模型：历史高低价（Phase 1，修订）
 
 **关联规格**：[spec.md](./spec.md)  
 **调研**：[research.md](./research.md)
@@ -7,42 +7,48 @@
 
 | 表 | 角色 |
 |----|------|
-| `stock_basic` | 主数据行扩展三列，存放历史最高价、历史最低价、极值计算时间。 |
-| `stock_daily_bar` | 只读来源：`high`、`low`、`stock_code`、`trade_date`。 |
+| `stock_daily_bar` | **读写**：每行 `trade_date` 存 `cum_hist_high` / `cum_hist_low`（截至该日含扩展极值）；**读** `high`、`low` 作递推来源。 |
+| `stock_basic` | **不存**全表终态极值列（避免回测泄露未来）；列表展示用极值由接口连**最新日线**派生。 |
 
-关系：`stock_basic.code` 与 `stock_daily_bar.stock_code` 字符串一致（同一代码体系）。
+关系：`stock_basic.code` 与 `stock_daily_bar.stock_code` 字符串一致。
 
-## 2. `stock_basic` 新增字段（迁移）
+## 2. `stock_daily_bar` 新增字段（迁移）
 
-**迁移脚本建议路径**：`backend/scripts/add_stock_basic_hist_extrema.sql`（与现有 `add_*.sql` 风格一致）。
+**迁移脚本**：`backend/scripts/add_stock_daily_bar_cum_hist.sql`
 
 | 字段 | SQL 类型 | 可空 | 说明 |
 |------|----------|------|------|
-| `hist_high` | `DECIMAL(12,4)` | YES | 该股在 `stock_daily_bar` 全历史 `high` 的最大值。 |
-| `hist_low` | `DECIMAL(12,4)` | YES | 全历史 `low` 的最小值。 |
-| `hist_extrema_computed_at` | `DATETIME` | YES | 最近一次极值任务（增量或全量）成功写入该行的时间。 |
+| `cum_hist_high` | `DECIMAL(12,4)` | YES | 截至该 `trade_date`（含）所有已遍历日中 `high` 的扩展最大值。 |
+| `cum_hist_low` | `DECIMAL(12,4)` | YES | 截至该日（含）`low` 的扩展最小值。 |
 
 **校验规则**：
 
-- 若该股在 `stock_daily_bar` 中**无任何行**：`hist_high`、`hist_low` 均为 `NULL`，`hist_extrema_computed_at` 可为 `NULL`。
-- 若存在日线但 `high`/`low` 部分为 `NULL`：聚合时使用 SQL `MAX(high)`/`MIN(low)` 时忽略 `NULL` 行为（MySQL 语义）；若该股所有行为 `NULL`，结果仍为 `NULL`。
+- 按 `stock_code` + `trade_date` 升序递推；当日 `high`/`low` 为 `NULL` 时不更新对应扩展极值（列取当前已形成的扩展值，可为 `NULL` 直至首笔有效价）。
 
-**索引**：一般无需为 `hist_high`/`hist_low` 单独建索引（列表排序未在规格中要求）；若后续有「按历史最高价排序」需求再评估。
+**索引**：一般无需单独为两列建索引；若回测按 `(stock_code, trade_date)` 查已有主键/唯一键覆盖。
 
-## 3. SQLAlchemy 模型
+## 3. 移除 `stock_basic` 旧列（已有库升级）
 
-在 `app.models.stock_basic.StockBasic` 上增加与上表一致的三列，类型使用 `Numeric(12, 4)` 与 `DateTime`，与 ORM 现有风格一致。
+**脚本**：`backend/scripts/remove_stock_basic_hist_extrema.sql`（删除 `hist_high`、`hist_low`、`hist_extrema_computed_at`）。
 
-## 4. 聚合口径（与实现对应）
+新建库可使用已更新的 `reset_and_init_v3.sql`，其中 `stock_basic` 不再含上述三列。
+
+## 4. SQLAlchemy 模型
+
+- `StockDailyBar`：`cum_hist_high`、`cum_hist_low` → `Numeric(12, 4)`。  
+- `StockBasic`：不包含极值列。
+
+## 5. 聚合口径（与实现对应）
 
 | 操作 | 口径 |
 |------|------|
-| **全量 CLI** | `SELECT stock_code, MAX(high), MIN(low) FROM stock_daily_bar GROUP BY stock_code` → 按 `code` 更新 `stock_basic`；无日线数据的 `code` 将极值列置 `NULL`（可选是否清空仅无数据的行，建议在服务层显式处理）。 |
-| **增量定时** | 选定交易日 `T` 后，取集合 `S = { stock_code \| 存在 trade_date = T 的日线 }`，**仅对 `S` 中每个 code** 执行该股全历史 `MAX/MIN` 更新（或对 `S` 与聚合子查询 JOIN 批量 UPDATE）。 |
+| **全量 CLI** | 对每个 `stock_code`，按 `trade_date` 升序遍历行，维护扩展 max/min，逐行 UPDATE `cum_hist_*`。 |
+| **增量定时** | 交易日 `T` 上有日线的每个 `code`，对该 code **全部日线行**重算并写回（保证历史修订后仍一致）。 |
 
-## 5. 与 `synced_at` 的区分
+## 6. 列表接口与 `synced_at`
 
 | 字段 | 含义 |
 |------|------|
-| `synced_at` | 股票**基础信息**从 Tushare 同步的时间。 |
-| `hist_extrema_computed_at` | **极值**计算任务写入时间，独立演进。 |
+| `GET /api/stock/basic` 的 `hist_high` / `hist_low` | 等于该 code **最新 `trade_date`** 行上的 `cum_hist_high` / `cum_hist_low`（仅展示语义）。 |
+| `hist_extrema_computed_at` | 取上述最新日线行的 `updated_at`（极值列变更会触发行更新）。 |
+| `stock_basic.synced_at` | 仍为股票基础信息同步时间，与极值独立。 |

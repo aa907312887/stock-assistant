@@ -25,6 +25,13 @@
 | net_profit_max | number | 否 | 净利润上限（元） |
 | data_date | string | 否 | 数据日期 YYYY-MM-DD，不传则取最新交易日 |
 
+- **`items[]` 扩展字段**（与 `stock_daily_bar.cum_hist_*` 一致）：
+
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| hist_high | number / null | 是 | 截至本行 **数据日（含）** 的日线累计历史最高价（前复权）；日K 即 `trade_date` 当日；周/月 K 为周期结束日对应日线。未计算时为 `null`。 |
+| hist_low | number / null | 是 | 同上，累计历史最低价。 |
+
 - **响应**（JSON）:
 
 ```json
@@ -38,6 +45,8 @@
       "open": 12.50,
       "high": 12.65,
       "low": 12.31,
+      "hist_high": 13.10,
+      "hist_low": 11.90,
       "close": 12.60,
       "prev_close": 12.50,
       "price": 12.60,

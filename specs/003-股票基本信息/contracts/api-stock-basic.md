@@ -51,13 +51,13 @@
 
 - `last_synced_at`: 对 `stock_basic.synced_at` 的 **MAX**（全表最近一次写入时间）；若无数据可为 `null`。
 
-- **items[] 中历史极值字段**（与 `013-历史高低价` / `stock_basic` 一致）：
+- **items[] 中历史极值字段**（与 `013-历史高低价` 一致；**数值来自最新一根日线** `cum_hist_*`，非 `stock_basic` 列）：
 
 | 字段 | 类型 | 可空 | 说明 |
 |------|------|------|------|
-| `hist_high` | number | 是 | 历史最高价（全库日线 `high` 最大值）；无日行情或未计算时为 `null`。 |
-| `hist_low` | number | 是 | 历史最低价（全库日线 `low` 最小值）；无日行情或未计算时为 `null`。 |
-| `hist_extrema_computed_at` | string (ISO 8601) | 是 | 极值最近一次计算/写入时间；未跑过任务时为 `null`。 |
+| `hist_high` | number | 是 | 等于该股票**最新交易日**日线 `cum_hist_high`（截至该日含扩展最高）；无日行情或未计算时为 `null`。回测须按日读日线表，勿仅用本字段。 |
+| `hist_low` | number | 是 | 同上，对应 `cum_hist_low`。 |
+| `hist_extrema_computed_at` | string (ISO 8601) | 是 | 取上述最新日线行的 `updated_at`；无日线时为 `null`。 |
 
 - **错误**: `500` 时 `{ "detail": "中文说明" }`（与项目统一）。
 

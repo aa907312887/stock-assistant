@@ -54,7 +54,7 @@
     → 写完 K 线 → stock_indicator_fill_service（均线/MACD）
     → 大盘温度 rebuild / incremental
     → 策略 execute_strategy（定时）
-    → stock_hist_extrema_service（18:00 增量）
+    → 日线 upsert 内 apply_cum_extrema_after_daily_upsert（无 18:00 Job）
 ```
 
 **后端职责**：
@@ -81,7 +81,7 @@
   - **17:10**：`_job_sync_market_temperature` 大盘温度增量。
   - **启动后约 30 秒**：再次执行大盘温度（bootstrap），避免冷启动遗漏。
   - **17:20**：冲高回落、恐慌回落策略。
-  - **18:00**：历史极值增量 `run_incremental_for_trade_date`。
+  - ~~**18:00**：历史极值~~ **已移除**：`cum_hist_*` 在日线写入流程内维护（见 `stock_hist_extrema_service.apply_cum_extrema_after_daily_upsert`）。
 - **部署时是否执行一次**：**是**——启动后 **30 秒** 执行一次大盘温度（`DateTrigger`）；**不**在启动时自动全量股票同步（避免部署拖死）。
 - **手动触发方式**（已存在，迁移后仍使用）：
   - [x] **HTTP**：`POST /api/admin/stock-sync`（`X-Admin-Secret`），请求体支持 `mode`、`modules`、`start_date`、`end_date` 等（见 `TriggerSyncRequest`）。

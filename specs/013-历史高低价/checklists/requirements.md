@@ -34,6 +34,6 @@
 ## 备注
 
 - 校验说明：规格以日行情全量口径定义历史极值，以周期更新与可核对性约束下游策略；无待澄清项，可进入实现阶段。
-- **2026-03-28 更新**：已约定持久化至 `stock_basic`、增量默认约 18:00、手动全量纠偏；表名为数据契约，详见 [data-model.md](../data-model.md)。
+- **2026-03-29 更新**：累计极值持久化至 `stock_daily_bar`；日常随日线写入递推；手动全量纠偏见 CLI；详见 [data-model.md](../data-model.md)、[spec.md](../spec.md)。
 - **2026-03-28 更新**：股票基本信息列表须展示历史最高价/最低价；与 [003-股票基本信息](../../003-股票基本信息/spec.md)、[api-stock-basic.md](../../003-股票基本信息/contracts/api-stock-basic.md) 对齐。
 - **2026-03-28 Clarifications**：全量重算仅本机 CLI/脚本，不提供全量重算 HTTP（见 spec `## Clarifications`）。

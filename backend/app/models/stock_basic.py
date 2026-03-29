@@ -25,9 +25,6 @@ class StockBasic(Base):
     data_source: Mapped[str] = mapped_column(String(32), nullable=False, server_default="tushare")
     sync_batch_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     synced_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
-    hist_high: Mapped[Decimal | None] = mapped_column(Numeric(12, 4), nullable=True)
-    hist_low: Mapped[Decimal | None] = mapped_column(Numeric(12, 4), nullable=True)
-    hist_extrema_computed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, server_default=func.now(), onupdate=func.now()

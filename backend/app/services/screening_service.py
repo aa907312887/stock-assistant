@@ -225,16 +225,27 @@ def _query_screening(
     macd_red: bool | None,
     ma_cross: bool | None,
     macd_cross: bool | None,
-    row_mapper: Callable[[Any, StockBasic, StockFinancialReport | None], dict[str, Any]],
+    row_mapper: Callable[..., dict[str, Any]],
+    join_daily_extrema: bool = False,
 ) -> tuple[list[dict[str, Any]], int, date]:
-    """统一构建日/周/月列表查询。"""
+    """统一构建日/周/月列表查询。
+
+    join_daily_extrema：左连 ``stock_daily_bar`` 上与当前 K 线结束日相同的交易日行，
+    用于周/月 K 列表展示该股在周期结束日的日线累计历史高/低价（``cum_hist_*``）。
+    """
     date_col = getattr(bar_model, date_col_name)
     need_cross = ma_cross is not None or macd_cross is not None
     sub_rep = _financial_subquery(db, data_date)
+    daily_ext: Any = None
+    if join_daily_extrema:
+        daily_ext = aliased(StockDailyBar, name="screening_daily_extrema")
 
     if not need_cross:
+        entities: list[Any] = [bar_model, StockBasic, StockFinancialReport]
+        if daily_ext is not None:
+            entities.append(daily_ext)
         base = (
-            db.query(bar_model, StockBasic, StockFinancialReport)
+            db.query(*entities)
             .join(StockBasic, bar_model.stock_code == StockBasic.code)
             .outerjoin(sub_rep, bar_model.stock_code == sub_rep.c.r_code)
             .outerjoin(
@@ -244,8 +255,13 @@ def _query_screening(
                     StockFinancialReport.report_date == sub_rep.c.r_date,
                 ),
             )
-            .filter(date_col == data_date)
         )
+        if daily_ext is not None:
+            base = base.outerjoin(
+                daily_ext,
+                and_(bar_model.stock_code == daily_ext.stock_code, date_col == daily_ext.trade_date),
+            )
+        base = base.filter(date_col == data_date)
         base = _apply_common_filters(base, bar_model, code, name, ma_bull, macd_red)
     else:
         Curr = aliased(bar_model, name="curr_bar")
@@ -253,8 +269,11 @@ def _query_screening(
         prev_sub = _prev_bar_subquery(db, bar_model, date_col, data_date)
         curr_dc = getattr(Curr, date_col_name)
         prev_dc = getattr(Prev, date_col_name)
+        entities_c: list[Any] = [Curr, StockBasic, StockFinancialReport]
+        if daily_ext is not None:
+            entities_c.append(daily_ext)
         base = (
-            db.query(Curr, StockBasic, StockFinancialReport)
+            db.query(*entities_c)
             .join(StockBasic, Curr.stock_code == StockBasic.code)
             .outerjoin(sub_rep, Curr.stock_code == sub_rep.c.r_code)
             .outerjoin(
@@ -269,15 +288,23 @@ def _query_screening(
                 Prev,
                 and_(Prev.stock_code == prev_sub.c.sc, prev_dc == prev_sub.c.pd),
             )
-            .filter(curr_dc == data_date)
         )
+        if daily_ext is not None:
+            base = base.outerjoin(
+                daily_ext,
+                and_(Curr.stock_code == daily_ext.stock_code, curr_dc == daily_ext.trade_date),
+            )
+        base = base.filter(curr_dc == data_date)
         base = _apply_common_filters(base, Curr, code, name, ma_bull, macd_red)
         base = _apply_cross_filters(base, Curr, Prev, ma_cross, macd_cross)
 
     order_col = Curr.stock_code if need_cross else bar_model.stock_code
     total = base.count()
     rows = base.order_by(order_col).offset((page - 1) * page_size).limit(page_size).all()
-    items = [row_mapper(q, b, r) for q, b, r in rows]
+    if daily_ext is not None:
+        items = [row_mapper(q, b, r, d) for q, b, r, d in rows]
+    else:
+        items = [row_mapper(q, b, r, None) for q, b, r in rows]
     return items, total, data_date
 
 
@@ -311,6 +338,7 @@ def _list_screening_daily(
         ma_cross=ma_cross,
         macd_cross=macd_cross,
         row_mapper=_row_to_item_daily,
+        join_daily_extrema=False,
     )
     return items, total, dd
 
@@ -345,6 +373,7 @@ def _list_screening_weekly(
         ma_cross=ma_cross,
         macd_cross=macd_cross,
         row_mapper=_row_to_item_weekly_monthly,
+        join_daily_extrema=True,
     )
     return items, total, dd
 
@@ -379,11 +408,17 @@ def _list_screening_monthly(
         ma_cross=ma_cross,
         macd_cross=macd_cross,
         row_mapper=_row_to_item_weekly_monthly,
+        join_daily_extrema=True,
     )
     return items, total, dd
 
 
-def _row_to_item_daily(quote: StockDailyBar, basic: StockBasic, report: StockFinancialReport | None) -> dict[str, Any]:
+def _row_to_item_daily(
+    quote: StockDailyBar,
+    basic: StockBasic,
+    report: StockFinancialReport | None,
+    _daily_ext: StockDailyBar | None = None,
+) -> dict[str, Any]:
     return {
         "code": basic.code,
         "name": basic.name,
@@ -392,6 +427,8 @@ def _row_to_item_daily(quote: StockDailyBar, basic: StockBasic, report: StockFin
         "open": quote.open,
         "high": quote.high,
         "low": quote.low,
+        "hist_high": quote.cum_hist_high,
+        "hist_low": quote.cum_hist_low,
         "close": quote.close,
         "price": quote.close,
         "prev_close": quote.prev_close,
@@ -422,7 +459,10 @@ def _row_to_item_daily(quote: StockDailyBar, basic: StockBasic, report: StockFin
 
 
 def _row_to_item_weekly_monthly(
-    quote: StockWeeklyBar | StockMonthlyBar, basic: StockBasic, report: StockFinancialReport | None
+    quote: StockWeeklyBar | StockMonthlyBar,
+    basic: StockBasic,
+    report: StockFinancialReport | None,
+    daily_ext: StockDailyBar | None = None,
 ) -> dict[str, Any]:
     end_date = getattr(quote, "trade_week_end", None) or getattr(quote, "trade_month_end")
     return {
@@ -433,6 +473,8 @@ def _row_to_item_weekly_monthly(
         "open": quote.open,
         "high": quote.high,
         "low": quote.low,
+        "hist_high": daily_ext.cum_hist_high if daily_ext is not None else None,
+        "hist_low": daily_ext.cum_hist_low if daily_ext is not None else None,
         "close": quote.close,
         "price": quote.close,
         "prev_close": None,

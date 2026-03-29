@@ -4,7 +4,8 @@
 
     python -m app.scripts.recompute_hist_extrema_full
 
-执行前请已在数据库运行 scripts/add_stock_basic_hist_extrema.sql。
+执行前请已在数据库运行 scripts/add_stock_daily_bar_cum_hist.sql；
+若库中仍有 stock_basic 上旧极值列，可在全量重算后执行 scripts/remove_stock_basic_hist_extrema.sql。
 """
 
 from __future__ import annotations
@@ -26,8 +27,8 @@ def main() -> int:
         result = run_full_recompute(db)
         elapsed = time.perf_counter() - t0
         print(
-            f"历史极值全量完成: updated_rows={result.get('updated_rows')} "
-            f"codes_with_daily={result.get('codes_with_daily')} "
+            f"历史极值全量完成: updated_codes={result.get('updated_codes')} "
+            f"updated_daily_rows={result.get('updated_daily_rows')} "
             f"elapsed_sec={result.get('elapsed_sec')} (wall {elapsed:.2f}s)"
         )
         return 0 if result.get("ok") else 1

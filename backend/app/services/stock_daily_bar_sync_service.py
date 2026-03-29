@@ -11,6 +11,7 @@ from typing import Any, Iterator
 from sqlalchemy.orm import Session
 
 from app.models import StockDailyBar
+from app.services.stock_hist_extrema_service import apply_cum_extrema_after_daily_upsert
 from app.services.stock_sync_utils import safe_decimal
 from app.services.tushare_client import (
     TushareClientError,
@@ -166,6 +167,8 @@ def sync_daily_bars(
             batch_id=batch_id,
         ):
             written += 1
+            db.flush()
+            apply_cum_extrema_after_daily_upsert(db, code, trade_date)
         if idx == 1 or idx == n or idx % DAILY_QFQ_PROGRESS_EVERY == 0:
             logger.info(
                 "日线前复权进度 %s/%s trade_date=%s 已写入=%s",
@@ -254,11 +257,16 @@ def sync_daily_bars_backfill_range(
 
             stock_written = 0
             skipped_out_of_range = 0
+            parsed: list[tuple[date, dict[str, Any]]] = []
             for r in rows:
                 td = _row_to_trade_date(r)
                 if td is None or td < start_date or td > end_date:
                     skipped_out_of_range += 1
                     continue
+                parsed.append((td, r))
+            parsed.sort(key=lambda x: x[0])
+
+            for td, r in parsed:
                 if td not in basic_by_td:
                     basic_by_td[td] = get_daily_basic_by_trade_date(td)
                 raw_basic = basic_by_td[td].get(code, {})
@@ -272,6 +280,8 @@ def sync_daily_bars_backfill_range(
                 ):
                     stock_written += 1
                     total_written += 1
+                    db.flush()
+                    apply_cum_extrema_after_daily_upsert(db, code, td)
 
             db.commit()
             db.expire_all()

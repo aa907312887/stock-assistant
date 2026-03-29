@@ -15,6 +15,7 @@
                 <p>1) 右上角可切换日K / 周K / 月K；默认日K。各周期均线与 MACD 均基于该周期收盘序列落库。</p>
                 <p>2) 筛选含：代码、名称、多头排列、MACD 红柱、MA5 上穿 MA10、MACD 金叉（DIF 上穿 DEA）。金叉均指<strong>当前这根 K 线相对紧邻上一根同周期 K</strong>刚发生上穿；无上一根或指标为空时「是」不成立。</p>
                 <p>3) 周K/月K 行上无日级估值（PE 等）与昨收、振幅等列时显示为「-」；财报仍为不晚于周期结束日的最近一期。</p>
+                <p>4) 「历史最高/最低」为截至<strong>本行数据日（含）</strong>的日线累计极值（前复权口径）；日K 即该交易日；周/月 K 取<strong>周期结束日</strong>对应日线上的累计值。未回填 <code>cum_hist_*</code> 时显示「-」。</p>
               </div>
             </el-popover>
           </div>
@@ -79,6 +80,36 @@
         </el-table-column>
         <el-table-column prop="low" label="最低价" width="90" align="right">
           <template #default="{ row }">{{ formatNum(row.low) }}</template>
+        </el-table-column>
+        <el-table-column prop="hist_high" width="108" align="right">
+          <template #header>
+            <span class="col-with-tip">
+              历史最高
+              <el-tooltip
+                placement="top"
+                :show-after="200"
+                content="截至本行数据日（含）的日线累计最高价（前复权）；日K 即该交易日；周/月 K 为周期结束日对应日线。无数据时显示 -。"
+              >
+                <span class="tip-icon-inline" aria-label="历史最高价说明">?</span>
+              </el-tooltip>
+            </span>
+          </template>
+          <template #default="{ row }">{{ formatNum(row.hist_high) }}</template>
+        </el-table-column>
+        <el-table-column prop="hist_low" width="108" align="right">
+          <template #header>
+            <span class="col-with-tip">
+              历史最低
+              <el-tooltip
+                placement="top"
+                :show-after="200"
+                content="截至本行数据日（含）的日线累计最低价（前复权）；日K 即该交易日；周/月 K 为周期结束日对应日线。无数据时显示 -。"
+              >
+                <span class="tip-icon-inline" aria-label="历史最低价说明">?</span>
+              </el-tooltip>
+            </span>
+          </template>
+          <template #default="{ row }">{{ formatNum(row.hist_low) }}</template>
         </el-table-column>
         <el-table-column prop="close" label="收盘价" width="90" align="right">
           <template #default="{ row }">{{ formatNum(row.close) }}</template>
@@ -324,5 +355,24 @@ onMounted(() => {
   padding: 24px;
   text-align: center;
   color: #909399;
+}
+.col-with-tip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+.tip-icon-inline {
+  cursor: help;
+  color: var(--el-color-info);
+  font-size: 11px;
+  line-height: 1;
+  border: 1px solid var(--el-color-info);
+  border-radius: 50%;
+  width: 14px;
+  height: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 </style>

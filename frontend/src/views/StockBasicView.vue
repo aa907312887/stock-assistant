@@ -9,7 +9,7 @@
             <template #content>
               <div class="tip-body">
                 <p><strong>本页能力</strong></p>
-                <p>查看与查询 A 股上市证券的<strong>基础维度</strong>数据（代码、名称、交易所、板块、行业、地域、上市日期等），以及基于<strong>已入库日线</strong>汇总的<strong>历史最高价/最低价</strong>（非当日盘中价，由定时任务更新）。</p>
+                <p>查看与查询 A 股上市证券的<strong>基础维度</strong>数据（代码、名称、交易所、板块、行业、地域、上市日期等），以及基于<strong>已入库日线</strong>在<strong>最新交易日</strong>上的<strong>累计历史最高/最低</strong>（非当日盘中价；回测请按交易日读日线表 <code>cum_hist_*</code>，勿误用列表快照作历史时点）。</p>
                 <p>数据来源于 <strong>Tushare Pro 接口 stock_basic</strong>，与「综合选股」共用同一份股票主数据；不包含 K 线、实时行情与财务利润表等（请在综合选股查看）。</p>
               </div>
             </template>
@@ -61,7 +61,7 @@
           <template #header>
             <span class="col-with-tip">
               历史最高价
-              <el-tooltip placement="top" :show-after="200" content="已入库日线的历史最高价（全历史），非实时行情；无数据时显示 —。">
+              <el-tooltip placement="top" :show-after="200" content="最新交易日日线上的累计最高价（截至该日含）；非实时行情；无数据时显示 —。">
                 <span class="tip-icon-inline" aria-label="历史最高价说明">?</span>
               </el-tooltip>
             </span>
@@ -72,7 +72,7 @@
           <template #header>
             <span class="col-with-tip">
               历史最低价
-              <el-tooltip placement="top" :show-after="200" content="已入库日线的历史最低价（全历史），非实时行情；无数据时显示 —。">
+              <el-tooltip placement="top" :show-after="200" content="最新交易日日线上的累计最低价（截至该日含）；非实时行情；无数据时显示 —。">
                 <span class="tip-icon-inline" aria-label="历史最低价说明">?</span>
               </el-tooltip>
             </span>

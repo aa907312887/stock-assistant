@@ -51,18 +51,18 @@ description: "013-历史高低价 实现任务清单"
 
 ---
 
-## Phase 4：User Story 2 — 增量定时更新与手动全量重算（Priority: P2）
+## Phase 4：User Story 2 — 随日线写入的增量递推与手动全量重算（Priority: P2）
 
-**Goal**：交易日 **18:00** 自动对「当日有日线」的股票集合做全历史聚合回写；全量仍仅 CLI（规格无 HTTP）。
+**Goal**：日线 upsert 成功后即维护 `cum_hist_*`（O(1) 或整股重算）；全量纠偏仍仅 CLI（规格无 HTTP）。
 
-**Independent Test**：在交易日造当日日线数据或等待定时器，查看日志中增量任务摘要；非交易日应跳过。
+**Independent Test**：执行一次 `daily` 同步后核对日线行上 `cum_hist_*`；无需等待独立极值 Cron。
 
 ### Implementation for User Story 2
 
-- [x] T007 [US2] 在 `backend/app/services/stock_hist_extrema_service.py` 实现 `run_incremental_for_trade_date(db, trade_date: date) -> dict`（仅 `trade_date` 当日存在日线的 `stock_code` 集合，对每 code 做全历史 `MAX/MIN` 回写；空集合时 INFO 跳过；失败记录与规格「保留旧极值」一致）
-- [x] T008 [US2] 在 `backend/app/core/scheduler.py` 注册 Cron `hour=18, minute=0`、`Asia/Shanghai`，job id 建议 `hist_extrema_incremental_daily`，入口函数内用 `get_latest_open_trade_date` 判断交易日后调用 `run_incremental_for_trade_date`；异常使用 `log_scheduled_job_failure`（与现有 stock_sync 任务一致）
+- [x] T007 [US2] ~~`run_incremental_for_trade_date`~~ **（2026-03-29 起由 spec 修订替代）**：在 `stock_hist_extrema_service` 提供 `apply_cum_extrema_after_daily_upsert`，由 `stock_daily_bar_sync_service` 在每次日线 upsert 后调用（O(1) 或整股重算）。
+- [x] T008 [US2] ~~18:00 Cron~~ **（2026-03-29 起已移除）**：极值不再注册独立 APScheduler Job；日常随 `daily` 子任务写入维护。
 
-**Checkpoint**：调度器启动后日志可见新 job；交易日 18:00 行为符合 `plan.md`。
+**Checkpoint**：日线写入后累计列与递推口径一致；Scheduler 无 `hist_extrema_incremental_daily`。
 
 ---
 

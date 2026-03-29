@@ -82,7 +82,7 @@
 
 - [x] T015 [US3] 清空重灌后执行 `backend/app/services/market_temperature/temperature_job_service.py` 中 `run_incremental_temperature_job` 或 `rebuild_temperature_range`（视区间需求），核对 `market_temperature_daily` 与前端大盘温度页数据（**验收步骤见 `migration-runbook.md` §6**）
 - [x] T016 [P] [US3] 对 `strategy_selection_item` 等已清空表，在数据就绪后由 `backend/app/core/scheduler.py` 定时任务或手动调用 `execute_strategy` 重算抽样策略（如 `chong_gao_hui_luo`、`panic_pullback`），确认无 `StrategyDataNotReadyError` 残留误报（**同上**）
-- [x] T017 [US3] 运行 `backend/app/services/stock_hist_extrema_service.py` 全量或区间重算（若现有仅为增量，则补充迁移期一次性全量方案或文档说明），确认 `stock_basic.hist_high`/`hist_low`/`hist_extrema_computed_at` 为前复权历史极值（**全量脚本：`python -m app.scripts.recompute_hist_extrema_full`，见 runbook**）
+- [x] T017 [US3] 运行 `stock_hist_extrema_service` 全量/增量重算，确认 `stock_daily_bar.cum_hist_high`/`cum_hist_low` 为前复权口径下按日累计极值；列表 `hist_*` 来自最新日线（**全量脚本：`python -m app.scripts.recompute_hist_extrema_full`，见 runbook**；库迁移见 `add_stock_daily_bar_cum_hist.sql` / `remove_stock_basic_hist_extrema.sql`）
 
 **Checkpoint**：规格中「温度 + basic + 极值」验收场景全部可追溯。
 

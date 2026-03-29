@@ -2,11 +2,11 @@
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import func
-from sqlalchemy.orm import Session
+from sqlalchemy import and_, func
+from sqlalchemy.orm import Session, aliased
 
 from app.database import get_db
-from app.models import StockBasic
+from app.models import StockBasic, StockDailyBar
 from app.schemas.stock_basic import StockBasicItem, StockBasicListResponse, StockBasicSyncResponse
 from app.services.stock_basic_sync_service import run_sync_basic_only
 from app.services.tushare_client import TushareClientError
@@ -59,18 +59,7 @@ def _normalize_data_source(raw: str | None) -> str:
     return raw
 
 
-@router.get("", response_model=StockBasicListResponse)
-def list_stock_basic(
-    page: int = Query(1, ge=1),
-    page_size: int = Query(20, ge=1, le=200),
-    code: str | None = Query(None, description="股票代码，模糊"),
-    name: str | None = Query(None, description="名称，模糊"),
-    exchange: str | None = Query(None, description="交易所（SSE/SZSE/BSE）"),
-    market: str | None = Query(None, description="板块（主板/创业板/科创板/北交所）"),
-    industry: str | None = Query(None, description="行业，模糊"),
-    db: Session = Depends(get_db),
-) -> StockBasicListResponse:
-    q = db.query(StockBasic)
+def _apply_stock_basic_filters(q, *, code, name, exchange, market, industry):
     if code:
         q = q.filter(StockBasic.code.like(f"%{code.strip()}%"))
     if name:
@@ -82,9 +71,46 @@ def list_stock_basic(
         q = q.filter(StockBasic.market == m)
     if industry:
         q = q.filter(StockBasic.industry_name.like(f"%{industry.strip()}%"))
-    total = q.count()
+    return q
+
+
+@router.get("", response_model=StockBasicListResponse)
+def list_stock_basic(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=200),
+    code: str | None = Query(None, description="股票代码，模糊"),
+    name: str | None = Query(None, description="名称，模糊"),
+    exchange: str | None = Query(None, description="交易所（SSE/SZSE/BSE）"),
+    market: str | None = Query(None, description="板块（主板/创业板/科创板/北交所）"),
+    industry: str | None = Query(None, description="行业，模糊"),
+    db: Session = Depends(get_db),
+) -> StockBasicListResponse:
+    q_count = _apply_stock_basic_filters(db.query(StockBasic), code=code, name=name, exchange=exchange, market=market, industry=industry)
+    total = q_count.count()
+
+    latest_td_sq = (
+        db.query(
+            StockDailyBar.stock_code.label("code_key"),
+            func.max(StockDailyBar.trade_date).label("latest_td"),
+        )
+        .group_by(StockDailyBar.stock_code)
+        .subquery()
+    )
+    BarLatest = aliased(StockDailyBar)
+    qi = (
+        db.query(StockBasic, BarLatest.cum_hist_high, BarLatest.cum_hist_low, BarLatest.updated_at)
+        .outerjoin(latest_td_sq, latest_td_sq.c.code_key == StockBasic.code)
+        .outerjoin(
+            BarLatest,
+            and_(
+                BarLatest.stock_code == StockBasic.code,
+                BarLatest.trade_date == latest_td_sq.c.latest_td,
+            ),
+        )
+    )
+    qi = _apply_stock_basic_filters(qi, code=code, name=name, exchange=exchange, market=market, industry=industry)
     rows = (
-        q.order_by(StockBasic.code)
+        qi.order_by(StockBasic.code)
         .offset((page - 1) * page_size)
         .limit(page_size)
         .all()
@@ -101,11 +127,11 @@ def list_stock_basic(
             list_date=r.list_date,
             synced_at=r.synced_at,
             data_source=_normalize_data_source(r.data_source),
-            hist_high=_decimal_to_float(r.hist_high),
-            hist_low=_decimal_to_float(r.hist_low),
-            hist_extrema_computed_at=r.hist_extrema_computed_at,
+            hist_high=_decimal_to_float(ch),
+            hist_low=_decimal_to_float(cl),
+            hist_extrema_computed_at=bar_u,
         )
-        for r in rows
+        for r, ch, cl, bar_u in rows
     ]
     return StockBasicListResponse(
         items=items,

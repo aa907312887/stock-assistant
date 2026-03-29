@@ -16,7 +16,7 @@ TRUNCATE TABLE market_temperature_factor_daily;
 TRUNCATE TABLE market_temperature_daily;
 TRUNCATE TABLE market_index_daily_quote;
 
--- 行情与股票主档（含 stock_basic 上历史极值字段，随重算恢复）
+-- 行情与股票主档（历史累计高低在 stock_daily_bar.cum_hist_*，清空后须重跑极值任务）
 TRUNCATE TABLE stock_daily_bar;
 TRUNCATE TABLE stock_weekly_bar;
 TRUNCATE TABLE stock_monthly_bar;

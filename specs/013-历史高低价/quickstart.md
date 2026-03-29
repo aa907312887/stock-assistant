@@ -7,14 +7,17 @@
 
 ## 2. 数据库迁移
 
-在数据库中执行：
+在数据库中执行（**执行前请备份**）：
 
 ```bash
-# 示例：按项目惯例用 mysql 客户端执行
-mysql -u... -p... your_db < backend/scripts/add_stock_basic_hist_extrema.sql
+mysql -u... -p... your_db < backend/scripts/add_stock_daily_bar_cum_hist.sql
 ```
 
-（脚本名以实现为准；执行前请备份。）
+若库中仍有旧方案在 `stock_basic` 上的三列，在全量重算完成后再执行：
+
+```bash
+mysql -u... -p... your_db < backend/scripts/remove_stock_basic_hist_extrema.sql
+```
 
 ## 3. 首次全量极值（本机 CLI）
 
@@ -25,7 +28,7 @@ cd backend
 python -m app.scripts.recompute_hist_extrema_full
 ```
 
-成功时控制台打印 `updated_rows`、`codes_with_daily` 与耗时。
+成功时控制台打印 `updated_codes`、`updated_daily_rows` 与耗时。
 
 ## 4. 验证列表接口
 
@@ -35,11 +38,10 @@ curl -s "http://127.0.0.1:8000/api/stock/basic?page=1&page_size=5" | jq '.items[
 
 应能看到 `hist_*` 字段（有数据时为数字，无则为 `null`）。
 
-## 5. 验证增量任务
+## 5. 验证随日线写入的累计极值
 
-- 启动后端，确认日志中出现 Scheduler 启动信息。
-- 在**交易日**可观察 **18:00** 前后是否出现极值任务相关日志（`job_id` 以实现为准）；非交易日任务应快速跳过（与现有交易日判断一致）。
-- 若不便等待定时器，可在开发环境临时调用服务层 `run_incremental_hist_extrema(...)`（以实现暴露方式为准）单次试跑。
+- 执行一次带 `daily` 的同步（如 `python -m app.scripts.sync_stock` 或管理端 `POST /api/admin/stock-sync`），写入后查询该股**最新**与**当日**日线行的 `cum_hist_high` / `cum_hist_low`，应与按日递推口径一致。
+- **无**独立 18:00 极值 Job；Scheduler 启动日志中不应再出现 `hist_extrema_incremental_daily`。
 
 ## 6. 前端
 

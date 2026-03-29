@@ -59,10 +59,11 @@ curl -sS -X POST -H "X-Admin-Secret: $ADMIN_SECRET" \
 4. **历史极值**：全量迁移后建议执行一次全历史重算（依赖已前复权的 `stock_daily_bar`）：
 
 ```bash
+# 须已执行 add_stock_daily_bar_cum_hist.sql；全量极值写入日线 cum 列后，可执行 remove_stock_basic_hist_extrema.sql 去掉 stock_basic 旧列
 cd backend && python -m app.scripts.recompute_hist_extrema_full
 ```
 
-日常仍可由定时任务 `run_incremental_for_trade_date` 增量更新。
+日常随日线同步在 upsert 后更新 `cum_hist_*`（无单独极值定时任务）。
 
 5. **策略选股**：数据就绪后由定时 17:20 或手动 `execute_strategy` 重算。
 

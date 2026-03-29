@@ -1,154 +1,143 @@
-"""股票历史最高价/最低价：从 stock_daily_bar 聚合写入 stock_basic。
+"""股票累计历史最高/最低：写入 stock_daily_bar（按交易日），不回写 stock_basic。
 
-口径（与 specs/013-历史高低价 一致）：
-- 对给定股票代码，hist_high = 该股在 stock_daily_bar 中全部交易日的 MAX(high)；
-  hist_low = MIN(low)。high/low 为 NULL 的行在 SQL 聚合中自动忽略。
-- 不在本服务内做复权转换；与日线表已存字段语义一致。
-- 全量任务：覆盖所有 stock_basic 行；在日线中有记录的代码写聚合结果，无日线记录的代码将
-  hist_high/hist_low 置为 NULL，并更新 hist_extrema_computed_at。
-- 增量任务：仅处理「指定 trade_date 当日存在日线」的股票代码，对该代码仍按**全历史**
-  重算 MAX/MIN 后写回；其它股票行不修改。若单日任务失败，不批量清空已有极值（按行更新，
-  已成功的行保留；异常向上抛出由调用方记录日志）。
-- 若历史日线发生大面积修订，仅靠增量无法保证与全库一致，须在本机执行全量 CLI
- （app.scripts.recompute_hist_extrema_full）纠偏。
+口径（与 specs/013-历史高低价 一致，存储位置已迁至日线）：
+- 对某股票按 trade_date 升序遍历日线，维护扩展最大/最小：
+  ``cum_hist_high`` = 截至当日（含）所有已遍历日中 ``high`` 的最大值（跳过 high 为 NULL 的参与比较，
+  且该行 cum 继承上一有效扩展值）；``cum_hist_low`` 同理对 ``low`` 取扩展最小。
+- 回测在日期 T 只能读取 ``trade_date=T`` 行的 cum 列，等价于「当时已知的历史极值」，不会混入 T 之后的价格。
+- 全量任务：对 ``stock_daily_bar`` 中出现的每个 ``stock_code`` 重算并更新该股全部日线行。
+- **日常增量**：在 ``stock_daily_bar_sync_service`` 每次成功 upsert 一行日线后调用
+  ``apply_cum_extrema_after_daily_upsert``：若该股**不存在**更晚 ``trade_date``，则用**上一交易日**
+  行的 ``cum_hist_*`` 与当日 ``high``/``low`` 做 O(1) 递推；若存在更晚行（中间改数/补洞），则对该 code
+  **整股**重算。无单独 Cron。
+- 不在本服务内改复权口径；与 ``high``/``low`` 已存语义一致。
 
-本模块不包含随机或非确定性写库逻辑；相同数据库快照下重复执行全量应得到相同极值结果。
+全量 CLI：``python -m app.scripts.recompute_hist_extrema_full``
 """
 
 from __future__ import annotations
 
 import logging
-from datetime import date, datetime
+import time
+from datetime import date
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app.models import StockBasic, StockDailyBar
+from app.models import StockDailyBar
 
 logger = logging.getLogger(__name__)
 
+_COMMIT_EVERY_CODES = 80
 
-def _aggregate_all_by_code(db: Session) -> dict[str, tuple[Decimal | None, Decimal | None]]:
-    """返回 {stock_code: (max_high, min_low)}，仅包含有日线记录的代码。"""
-    rows = (
-        db.query(
-            StockDailyBar.stock_code,
-            func.max(StockDailyBar.high).label("mh"),
-            func.min(StockDailyBar.low).label("ml"),
-        )
-        .group_by(StockDailyBar.stock_code)
+
+def _recompute_cumulative_for_code(db: Session, stock_code: str) -> int:
+    """按时间顺序写回该股所有日线的 cum_hist_*；返回更新的行数。"""
+    bars = (
+        db.query(StockDailyBar)
+        .filter(StockDailyBar.stock_code == stock_code)
+        .order_by(StockDailyBar.trade_date.asc())
         .all()
     )
-    out: dict[str, tuple[Decimal | None, Decimal | None]] = {}
-    for code, mh, ml in rows:
-        out[code] = (mh, ml)
-    return out
+    max_h: Decimal | None = None
+    min_l: Decimal | None = None
+    n = 0
+    for b in bars:
+        if b.high is not None:
+            max_h = b.high if max_h is None else max(max_h, b.high)
+        if b.low is not None:
+            min_l = b.low if min_l is None else min(min_l, b.low)
+        b.cum_hist_high = max_h
+        b.cum_hist_low = min_l
+        n += 1
+    return n
 
 
-def _aggregate_one_code(
-    db: Session, stock_code: str
-) -> tuple[Decimal | None, Decimal | None]:
+def apply_cum_extrema_after_daily_upsert(db: Session, stock_code: str, trade_date: date) -> None:
+    """在成功写入/更新某交易日日线后，维护该行 ``cum_hist_*``。
+
+    纯尾部追加：取上一交易日行的累计值与当日 high/low 递推（O(1)）。
+    若库中已存在更晚交易日、或上一行累计未回填而存在更早日线，则整股重算以保证与全序递推一致。
+    """
     row = (
-        db.query(
-            func.max(StockDailyBar.high).label("mh"),
-            func.min(StockDailyBar.low).label("ml"),
+        db.query(StockDailyBar)
+        .filter(
+            StockDailyBar.stock_code == stock_code,
+            StockDailyBar.trade_date == trade_date,
         )
-        .filter(StockDailyBar.stock_code == stock_code)
-        .one()
+        .one_or_none()
     )
-    return row.mh, row.ml
+    if row is None:
+        return
+
+    later = (
+        db.query(StockDailyBar)
+        .filter(
+            StockDailyBar.stock_code == stock_code,
+            StockDailyBar.trade_date > trade_date,
+        )
+        .limit(1)
+        .first()
+    )
+    if later is not None:
+        _recompute_cumulative_for_code(db, stock_code)
+        return
+
+    prev = (
+        db.query(StockDailyBar)
+        .filter(
+            StockDailyBar.stock_code == stock_code,
+            StockDailyBar.trade_date < trade_date,
+        )
+        .order_by(StockDailyBar.trade_date.desc())
+        .first()
+    )
+    if prev is not None and prev.cum_hist_high is None and prev.cum_hist_low is None:
+        older = (
+            db.query(StockDailyBar)
+            .filter(
+                StockDailyBar.stock_code == stock_code,
+                StockDailyBar.trade_date < prev.trade_date,
+            )
+            .limit(1)
+            .first()
+        )
+        if older is not None:
+            _recompute_cumulative_for_code(db, stock_code)
+            return
+
+    max_h = prev.cum_hist_high if prev else None
+    min_l = prev.cum_hist_low if prev else None
+    if row.high is not None:
+        max_h = row.high if max_h is None else max(max_h, row.high)
+    if row.low is not None:
+        min_l = row.low if min_l is None else min(min_l, row.low)
+    row.cum_hist_high = max_h
+    row.cum_hist_low = min_l
 
 
 def run_full_recompute(db: Session) -> dict[str, Any]:
-    """全量重算：所有 stock_basic 行根据日线聚合更新极值字段。
-
-    Returns:
-        摘要 dict，含 updated_rows、with_bar_codes、elapsed_sec、ok。
-    """
-    import time
-
+    """全量：对每个有日线的 stock_code 重算累计极值并写回日线表。"""
     t0 = time.perf_counter()
-    agg = _aggregate_all_by_code(db)
-    now = datetime.now()
-    basics = db.query(StockBasic).all()
-    updated = 0
-    for row in basics:
-        if row.code in agg:
-            mh, ml = agg[row.code]
-            row.hist_high = mh
-            row.hist_low = ml
-        else:
-            row.hist_high = None
-            row.hist_low = None
-        row.hist_extrema_computed_at = now
-        updated += 1
+    codes = [c[0] for c in db.query(StockDailyBar.stock_code).distinct().all()]
+    total_rows = 0
+    for i, code in enumerate(codes, start=1):
+        total_rows += _recompute_cumulative_for_code(db, code)
+        if i % _COMMIT_EVERY_CODES == 0:
+            db.commit()
+            logger.info("历史极值全量进度 codes=%s/%s daily_rows_so_far=%s", i, len(codes), total_rows)
     db.commit()
     elapsed = time.perf_counter() - t0
     logger.info(
-        "历史极值全量重算完成 rows=%s codes_with_bar=%s elapsed_sec=%.2f",
-        updated,
-        len(agg),
+        "历史极值全量完成（日线累计列）codes=%s daily_rows=%s elapsed_sec=%.2f",
+        len(codes),
+        total_rows,
         elapsed,
     )
     return {
         "ok": True,
-        "updated_rows": updated,
-        "codes_with_daily": len(agg),
-        "elapsed_sec": round(elapsed, 3),
-    }
-
-
-def run_incremental_for_trade_date(db: Session, trade_date: date) -> dict[str, Any]:
-    """增量：仅处理在 trade_date 当日有日线的股票，按全历史重算该股极值并写回 stock_basic。
-
-    不在集合内的 stock_basic 行不修改。
-    """
-    import time
-
-    t0 = time.perf_counter()
-    codes = (
-        db.query(StockDailyBar.stock_code)
-        .filter(StockDailyBar.trade_date == trade_date)
-        .distinct()
-        .all()
-    )
-    code_list = [c[0] for c in codes]
-    if not code_list:
-        logger.info("历史极值增量跳过：trade_date=%s 无日线记录", trade_date)
-        return {
-            "ok": True,
-            "skipped": True,
-            "reason": "no_daily_for_date",
-            "trade_date": trade_date.isoformat(),
-            "updated_codes": 0,
-            "elapsed_sec": round(time.perf_counter() - t0, 3),
-        }
-
-    now = datetime.now()
-    updated = 0
-    for code in code_list:
-        basic = db.query(StockBasic).filter(StockBasic.code == code).one_or_none()
-        if basic is None:
-            continue
-        mh, ml = _aggregate_one_code(db, code)
-        basic.hist_high = mh
-        basic.hist_low = ml
-        basic.hist_extrema_computed_at = now
-        updated += 1
-    db.commit()
-    elapsed = time.perf_counter() - t0
-    logger.info(
-        "历史极值增量完成 trade_date=%s updated_codes=%s elapsed_sec=%.2f",
-        trade_date,
-        updated,
-        elapsed,
-    )
-    return {
-        "ok": True,
-        "skipped": False,
-        "trade_date": trade_date.isoformat(),
-        "updated_codes": updated,
+        "updated_codes": len(codes),
+        "updated_daily_rows": total_rows,
         "elapsed_sec": round(elapsed, 3),
     }

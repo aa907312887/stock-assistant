@@ -8,6 +8,9 @@ export interface ScreeningItem {
   open: number | null
   high: number | null
   low: number | null
+  /** 截至本行数据日（含）的日线累计历史高/低价；周月 K 取周期结束日对应日线 */
+  hist_high: number | null
+  hist_low: number | null
   close: number | null
   price: number | null
   prev_close: number | null

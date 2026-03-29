@@ -7,13 +7,13 @@
 
 ## 1. 变更说明
 
-在 **`items[]` 每条记录**中增加以下可选字段（与 `stock_basic` 列一致）：
+在 **`items[]` 每条记录**中增加以下可选字段（**语义**来自 `stock_daily_bar` 最新行的累计极值，**非** `stock_basic` 持久化列）：
 
 | 字段 | 类型 | 可空 | 说明 |
 |------|------|------|------|
-| `hist_high` | `number` | 是 | 历史最高价；无日线或未计算为 `null`。 |
-| `hist_low` | `number` | 是 | 历史最低价；无日线或未计算为 `null`。 |
-| `hist_extrema_computed_at` | `string`（ISO 8601） | 是 | 极值最近计算时间；未跑过为 `null`。 |
+| `hist_high` | `number` | 是 | 最新日线 `cum_hist_high`；无日线或未计算为 `null`。 |
+| `hist_low` | `number` | 是 | 最新日线 `cum_hist_low`。 |
+| `hist_extrema_computed_at` | `string`（ISO 8601） | 是 | 最新日线行 `updated_at`；无日线为 `null`。 |
 
 **响应示例片段**（仅演示新增字段）：
 

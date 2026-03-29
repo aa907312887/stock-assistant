@@ -31,6 +31,8 @@ class ScreeningItem(BaseModel):
     open: Decimal | None = None
     high: Decimal | None = None
     low: Decimal | None = None
+    hist_high: Decimal | None = None
+    hist_low: Decimal | None = None
     close: Decimal | None = None
     price: Decimal | None = None
     prev_close: Decimal | None = None

@@ -10,7 +10,7 @@
 |----|----------|
 | `stock_daily_bar` | `open`/`high`/`low`/`close`/`prev_close` 及由价格推导的涨跌幅类字段，语义统一为 **Tushare `pro_bar` + `qfq` 前复权**；`daily_basic` 来源的换手率、市值、PE 等**非 OHLC** 字段仍为当日全市场指标，与复权无冲突。 |
 | `stock_weekly_bar` / `stock_monthly_bar` | OHLC 为 **`stk_week_month_adj` 的 `*_qfq`**；`vol`/`amount` 等同接口原文。 |
-| `stock_basic` | 规格要求**全表行删除后重拉** `stock_basic`（`stock_basic` 接口）；`hist_high`/`hist_low`/`hist_extrema_computed_at` 随清空后在历史极值任务中重算。 |
+| `stock_basic` | 规格要求**全表行删除后重拉** `stock_basic`（`stock_basic` 接口）；历史累计极值在 **`stock_daily_bar.cum_hist_*`**，清空日线后须跑历史极值全量任务。 |
 
 ---
 
@@ -43,14 +43,13 @@
 
 ---
 
-## 4. `stock_basic` 历史极值字段
+## 4. 日线表累计极值字段（013）
 
 | 字段 | 类型（参考） | 说明 |
 |------|----------------|------|
-| `hist_high` / `hist_low` | `Numeric(12,4)` | 基于**前复权日线全历史**重算后写回 |
-| `hist_extrema_computed_at` | `DateTime` | 重算完成时间 |
+| `cum_hist_high` / `cum_hist_low` | `Numeric(12,4)` | 基于**前复权日线**按日递推的扩展最高/最低；**日常**随日线 upsert 写回；**全量纠偏**用 `python -m app.scripts.recompute_hist_extrema_full`。 |
 
-清空 `stock_basic` 行后上述字段随 `run_incremental_for_trade_date` / 全量重算任务再次写入。
+清空日线后须执行上述全量 CLI（或等价全量）再依赖日线同步递推。
 
 ---
 
