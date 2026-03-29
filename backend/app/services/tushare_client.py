@@ -2,13 +2,23 @@
 import json
 import logging
 import time
+import warnings
+from contextlib import contextmanager
 from datetime import date, timedelta
 from decimal import Decimal
 from threading import Lock
+from collections.abc import Iterator
 from typing import Any
 
 import pandas as pd
 import tushare as ts
+
+# Tushare 依赖 pandas 旧式 fillna(method=)，每个 pro_bar 会刷两条 FutureWarning，淹没同步进度日志
+warnings.filterwarnings(
+    "ignore",
+    message=r".*fillna with 'method' is deprecated.*",
+    category=FutureWarning,
+)
 
 from app.config import settings
 
@@ -27,6 +37,16 @@ def _rate_pause() -> None:
         sec = float(settings.tushare_rate_pause_sec)
     except (TypeError, ValueError):
         sec = 0.12
+    if sec > 0:
+        time.sleep(sec)
+
+
+def _rate_pause_daily_pro_bar() -> None:
+    """日线 pro_bar（前复权）专用间隔，可与全局 `_rate_pause` 不同，便于回灌提速。"""
+    try:
+        sec = float(settings.tushare_rate_pause_sec_daily)
+    except (TypeError, ValueError):
+        sec = 0.04
     if sec > 0:
         time.sleep(sec)
 
@@ -152,6 +172,41 @@ def get_daily_by_trade_date(trade_date: date) -> dict[str, dict[str, Any]]:
     raise TushareClientError(f"Tushare daily 失败: {last_err}") from last_err
 
 
+@contextmanager
+def _tushare_pro_bar_pandas_compat() -> Iterator[None]:
+    """
+    Tushare SDK `pro_bar` 内部仍使用 `Series.fillna(method='bfill')`；
+    pandas 2.2+ 起该用法可能直接抛错（不再仅是 FutureWarning），异常被 SDK 吞掉后变成 `IOError('ERROR.')`。
+    在调用 `ts.pro_bar` 期间将 `fillna(method=bfill/ffill)` 转发为 `.bfill()/.ffill()`，使官方接口可正常返回。
+    """
+    _orig_s = pd.Series.fillna
+    _orig_f = pd.DataFrame.fillna
+
+    def _series_fillna(self: Any, *args: Any, **kwargs: Any) -> Any:
+        m = kwargs.get("method")
+        if m in ("bfill", "backfill"):
+            return self.bfill(limit=kwargs.get("limit"))
+        if m in ("ffill", "pad"):
+            return self.ffill(limit=kwargs.get("limit"))
+        return _orig_s(self, *args, **kwargs)
+
+    def _frame_fillna(self: Any, *args: Any, **kwargs: Any) -> Any:
+        m = kwargs.get("method")
+        if m in ("bfill", "backfill"):
+            return self.bfill(limit=kwargs.get("limit"))
+        if m in ("ffill", "pad"):
+            return self.ffill(limit=kwargs.get("limit"))
+        return _orig_f(self, *args, **kwargs)
+
+    pd.Series.fillna = _series_fillna  # type: ignore[method-assign, assignment]
+    pd.DataFrame.fillna = _frame_fillna  # type: ignore[method-assign, assignment]
+    try:
+        yield
+    finally:
+        pd.Series.fillna = _orig_s  # type: ignore[method-assign, assignment]
+        pd.DataFrame.fillna = _orig_f  # type: ignore[method-assign, assignment]
+
+
 def fetch_pro_bar_qfq_daily(
     ts_code: str,
     start_date: date,
@@ -160,48 +215,57 @@ def fetch_pro_bar_qfq_daily(
     limit: int | None = None,
 ) -> list[dict[str, Any]]:
     """
-    日线**前复权** K 线，使用 SDK `ts.pro_bar`（`adj='qfq'`、`freq='D'`）。
-    内部对 `daily` + `adj_factor` 做前复权，与 Tushare 文档 [pro_bar](https://tushare.pro/document/2?doc_id=109) 一致。
+    日线**前复权** K 线：**仅**使用 SDK `ts.pro_bar`（`adj='qfq'`），与 [Tushare 文档](https://tushare.pro/document/2?doc_id=109) 一致。
+
+    调用期间使用 `_tushare_pro_bar_pandas_compat`，避免 pandas 2.2+ 下 SDK 内部 `fillna(method='bfill')` 抛错。
+    无其它数据源或本地合并回退；返回空或异常时抛出 `TushareClientError`。
     """
     pro = _get_pro()
-    tc = ts_code.strip()
+    tc = ts_code.strip().upper()
     if not tc:
-        return []
+        raise TushareClientError("ts_code 为空")
+    sd = start_date.strftime("%Y%m%d")
+    ed = end_date.strftime("%Y%m%d")
     last_err: Exception | None = None
     for attempt in range(MAX_RETRIES):
         try:
-            _rate_pause()
-            df = ts.pro_bar(
-                ts_code=tc,
-                api=pro,
-                start_date=start_date.strftime("%Y%m%d"),
-                end_date=end_date.strftime("%Y%m%d"),
-                freq="D",
-                asset="E",
-                adj="qfq",
-                limit=limit,
-            )
+            _rate_pause_daily_pro_bar()
+            with _tushare_pro_bar_pandas_compat():
+                df = ts.pro_bar(
+                    ts_code=tc,
+                    api=pro,
+                    start_date=sd,
+                    end_date=ed,
+                    freq="D",
+                    asset="E",
+                    adj="qfq",
+                    limit=limit,
+                )
             if df is None or (hasattr(df, "empty") and df.empty):
-                return []
+                raise TushareClientError(
+                    f"ts.pro_bar(qfq) 返回空数据 ts_code={tc} 区间={sd}..{ed}"
+                )
             return _df_to_records(df)
+        except TushareClientError:
+            raise
         except Exception as e:
             last_err = e
             logger.warning(
-                "Tushare pro_bar(qfq) 失败 attempt=%s ts_code=%s error=%s",
+                "ts.pro_bar(qfq) 失败 attempt=%s ts_code=%s error=%s",
                 attempt + 1,
                 tc,
                 e,
             )
             if attempt < MAX_RETRIES - 1:
                 time.sleep(RETRY_INTERVAL_SEC)
-    raise TushareClientError(f"Tushare pro_bar(qfq) 失败: {last_err}") from last_err
+    raise TushareClientError(
+        f"ts.pro_bar(qfq) 在重试后仍失败 ts_code={tc} 区间={sd}..{ed}: {last_err}"
+    ) from last_err
 
 
-def get_pro_bar_qfq_for_trade_date(ts_code: str, trade_date: date) -> dict[str, Any] | None:
-    """单标的、单日的前复权日线一行；无数据时返回 None。"""
+def get_pro_bar_qfq_for_trade_date(ts_code: str, trade_date: date) -> dict[str, Any]:
+    """单标的、单日的前复权日线一行；仅 `ts.pro_bar`，无数据或无法匹配交易日则抛 `TushareClientError`。"""
     rows = fetch_pro_bar_qfq_daily(ts_code, trade_date, trade_date, limit=128)
-    if not rows:
-        return None
     key = trade_date.strftime("%Y%m%d")
 
     def _row_date_str(r: dict[str, Any]) -> str | None:
@@ -217,7 +281,9 @@ def get_pro_bar_qfq_for_trade_date(ts_code: str, trade_date: date) -> dict[str, 
         rs = _row_date_str(r)
         if rs == key:
             return r
-    return rows[-1]
+    raise TushareClientError(
+        f"ts.pro_bar(qfq) 返回中无 trade_date={trade_date} 行 ts_code={ts_code.strip().upper()}"
+    )
 
 
 def map_stk_week_month_adj_row_for_normalize(row: dict[str, Any]) -> dict[str, Any]:

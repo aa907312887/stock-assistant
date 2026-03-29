@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.models import StockBasic, SyncJobRun
 from app.services.stock_basic_sync_service import run_sync_basic_only
-from app.services.stock_daily_bar_sync_service import sync_daily_bars
+from app.services.stock_daily_bar_sync_service import sync_daily_bars, sync_daily_bars_backfill_range
 from app.services.stock_financial_sync_service import sync_financial_reports
 from app.services.stock_monthly_bar_sync_service import sync_monthly_bars
 from app.services.stock_indicator_fill_service import (
@@ -23,7 +23,7 @@ from app.services.market_temperature.temperature_job_service import (
     rebuild_temperature_range,
     run_incremental_temperature_job,
 )
-from app.services.tushare_client import get_latest_open_trade_date, get_open_trade_dates
+from app.services.tushare_client import get_latest_open_trade_date
 
 logger = logging.getLogger(__name__)
 
@@ -182,16 +182,13 @@ def run_stock_sync(
             if mode == "backfill":
                 if start_date is None or end_date is None:
                     raise ValueError("backfill 模式下 daily 模块必须提供 start_date 和 end_date")
-                open_dates = get_open_trade_dates(start=start_date.strftime("%Y%m%d"), end=end_date.strftime("%Y%m%d"))
-                total_daily = 0
-                for current_date in open_dates:
-                    total_daily += sync_daily_bars(
-                        db,
-                        codes=codes,
-                        trade_date=current_date,
-                        batch_id=batch_id,
-                    )["daily_rows"]
-                stats["daily_rows"] = total_daily
+                stats["daily_rows"] = sync_daily_bars_backfill_range(
+                    db,
+                    codes=codes,
+                    start_date=start_date,
+                    end_date=end_date,
+                    batch_id=batch_id,
+                )["daily_rows"]
                 module_status["daily"] = "success"
                 _persist_progress()
             else:

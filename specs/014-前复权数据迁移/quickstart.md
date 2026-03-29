@@ -58,23 +58,22 @@ curl -sS -H "X-Admin-Secret: YOUR_ADMIN_SECRET" \
 > **警告**：以下操作会删除业务数据，仅在维护窗口、已备份前提下执行。
 
 1. 执行 `backend/scripts/truncate_for_qfq_migration.sql`（或按 `data-model.md` 调整）；详见 [migration-runbook.md](./migration-runbook.md)。  
-2. 使用现有管理接口触发全量同步（示例，参数以 `TriggerSyncRequest` 为准）：
+2. 在 `backend` 目录触发全量同步（与生产习惯一致；与 `POST /api/admin/stock-sync` 同一编排）：
 
 ```bash
-curl -sS -X POST -H "X-Admin-Secret: YOUR_ADMIN_SECRET" \
-  -H "Content-Type: application/json" \
-  -d '{"mode":"backfill","modules":["basic","daily","weekly","monthly"],"start_date":"2010-01-01","end_date":"2026-03-28"}' \
-  "http://127.0.0.1:8000/api/admin/stock-sync"
+cd backend
+python -m app.scripts.sync_stock --mode backfill \
+  --start-date 2019-01-01 --end-date 2026-03-28
 ```
 
 3. 同步完成后触发指标回填（若未在编排内自动跑完）：
 
 ```bash
-curl -sS -X POST -H "X-Admin-Secret: YOUR_ADMIN_SECRET" \
-  -H "Content-Type: application/json" \
-  -d '{"mode":"full","timeframes":["daily","weekly","monthly"]}' \
-  "http://127.0.0.1:8000/api/admin/stock-indicators"
+cd backend
+python -m app.scripts.fill_stock_indicators --mode full
 ```
+
+（若已启动 `uvicorn` 且需用 HTTP：`TriggerSyncRequest` / 指标请求体与 `admin` 路由一致，见 [migration-runbook.md](./migration-runbook.md) §3 可选 `curl`。）
 
 4. 大盘温度、策略选股、历史极值：依赖现有定时任务或 `plan.md` 中的手动触发说明。
 

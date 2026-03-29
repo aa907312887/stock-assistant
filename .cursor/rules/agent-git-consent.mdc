@@ -1,0 +1,11 @@
+---
+description: Agent 未经用户同意不得自行 git 提交或推送
+alwaysApply: true
+---
+
+# Agent 与 Git 写入操作
+
+- **禁止擅自提交/推送**：未经用户**明确同意**，助手不得执行 `git commit`、`git push`、`git merge`、`git rebase`、`git cherry-pick`、`git reset --hard` 等会**改变本地或远程仓库状态**的 Git 命令。
+- **允许只读**：可执行 `git status`、`git diff`、`git log`、`git show` 等用于排查与说明的只读命令。
+- **视为同意**：用户明确说出「提交」「commit」「推送」「push」「推到远程」等指令时，再按用户意图执行对应操作。
+- **与 `git-workflow.mdc` 的关系**：该文件描述的是**人类开发者**在本仓库的首选工作方式；不代表助手可自动代为提交或推送。

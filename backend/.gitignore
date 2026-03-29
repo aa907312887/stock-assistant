@@ -1,3 +1,6 @@
 # 与仓库根 .gitignore 配合：在仅打开 backend 目录时忽略上传文件
 uploads/portfolio/**
 !uploads/portfolio/.gitkeep
+
+# 本地 Tushare 导出（tests/test_pro_bar_qfq_export.py 等生成）
+tests/output/*.txt

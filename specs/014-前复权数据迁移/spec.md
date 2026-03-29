@@ -11,7 +11,7 @@
 
 - Q: Tushare 日线通用接口（`pro_bar`）无官方网页试单、主要依赖 SDK，接入正式同步前如何验证？ → A: **先在本系统内实现可 HTTP 调用的测试接口**（或项目约定的等价联调方式），用于验证 Token、请求参数与返回样例；**测试接口验收通过后**，再将相同调用逻辑纳入正式日线同步与落库路径。
 
-- **实现说明（2026-03-28）**：后端已落地——日线使用 SDK `ts.pro_bar`（`adj='qfq'`）逐标的写入；周/月使用 `stk_week_month_adj` 并将 `*_qfq` 映射入 `normalize_bar`；管理探测路由为 `GET /api/admin/tushare-probe/pro-bar-qfq` 与 `GET /api/admin/tushare-probe/stk-week-month-adj-qfq`；清空脚本见 `backend/scripts/truncate_for_qfq_migration.sql`，运维步骤见 `migration-runbook.md`。
+- **实现说明（2026-03-28）**：后端已落地——日线前复权**仅**使用 SDK `ts.pro_bar`（`adj='qfq'`），无其它合并回退路径；调用外加 `_tushare_pro_bar_pandas_compat`，将 pandas 2.2+ 不兼容的 `fillna(method='bfill')` 转发为 `.bfill()`；`pro_bar` 返回空或失败时抛 `TushareClientError`。**backfill** 时按约 **365 自然日（约一年）** 分块、块内对该段每个交易日拉全市场 `daily_basic`，再对每只股票**一次区间请求**拉取该年窗口内全部日线（`sync_daily_bars_backfill_range`，每标的查询后即 `commit`）；增量/单日仍用单日逐标的 `sync_daily_bars`。周/月使用 `stk_week_month_adj` 并将 `*_qfq` 映射入 `normalize_bar`；管理探测路由为 `GET /api/admin/tushare-probe/pro-bar-qfq` 与 `GET /api/admin/tushare-probe/stk-week-month-adj-qfq`；清空脚本见 `backend/scripts/truncate_for_qfq_migration.sql`，运维步骤见 `migration-runbook.md`。全量回灌与指标回填**推荐**使用 `python -m app.scripts.sync_stock` / `fill_stock_indicators`（与 `POST /api/admin/stock-sync`、`stock-indicators` 同源编排，本地脚本无需起 HTTP）。**日线 pro_bar** 请求间隔由 `TUSHARE_RATE_PAUSE_SEC_DAILY` 配置（默认约为全局 `TUSHARE_RATE_PAUSE_SEC` 的 1/3），与周/月等接口间隔独立可调。本地可执行 `python -m app.scripts.test_pro_bar_qfq --date YYYY-MM-DD` 验证前复权拉取。
 - **SC-006**：本地探测接口验收已于 2026-03-28 通过，记录见 `acceptance-probe.md`；生产库全量迁移（清空+回灌）仍按 `migration-runbook.md` 在维护窗口执行。
 
 ## 用户场景与测试 *（必填）*

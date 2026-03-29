@@ -36,6 +36,11 @@ class Settings(BaseSettings):
 
     # 每次调用 Tushare Pro 前的最小间隔（秒），降低触发限流概率；可按账号额度调大（如 0.2）
     tushare_rate_pause_sec: float = Field(default=0.12, validation_alias="TUSHARE_RATE_PAUSE_SEC")
+    # 仅日线 pro_bar（前复权）请求前使用；默认约为上一项的 1/3，便于全市场回灌提速；仍可通过 .env 单独调小/调大
+    tushare_rate_pause_sec_daily: float = Field(
+        default=0.04,
+        validation_alias="TUSHARE_RATE_PAUSE_SEC_DAILY",
+    )
 
     @model_validator(mode="after")
     def _tushare_token_from_env_file_only(self) -> Self:
