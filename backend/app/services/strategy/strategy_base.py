@@ -69,6 +69,8 @@ class BacktestTrade:
     market: str | None = None
     market_temp_score: float | None = None
     market_temp_level: str | None = None
+    # 形态/信号触发日（可与买入日不同）；策略可选填写。
+    trigger_date: date | None = None
     extra: dict[str, Any] = field(default_factory=dict)
 
 

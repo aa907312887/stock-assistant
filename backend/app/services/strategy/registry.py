@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from app.services.strategy.strategy_base import StockStrategy
 from app.services.strategy.strategies.chong_gao_hui_luo import ChongGaoHuiLuoStrategy
 from app.services.strategy.strategies.panic_pullback import PanicPullbackStrategy
+from app.services.strategy.strategies.shu_guang_chu_xian import ShuGuangChuXianStrategy
 
 
 @dataclass(frozen=True)
@@ -20,6 +21,7 @@ def list_strategies() -> list[StockStrategy]:
     return [
         ChongGaoHuiLuoStrategy(),
         PanicPullbackStrategy(),
+        ShuGuangChuXianStrategy(),
     ]
 
 

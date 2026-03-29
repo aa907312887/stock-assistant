@@ -33,6 +33,7 @@ CREATE TABLE IF NOT EXISTS backtest_trade (
   stock_code VARCHAR(20) NOT NULL,
   stock_name VARCHAR(50) NULL,
   buy_date DATE NOT NULL,
+  trigger_date DATE NULL COMMENT '形态或信号触发日',
   buy_price DECIMAL(12,4) NOT NULL,
   sell_date DATE NULL,
   sell_price DECIMAL(12,4) NULL,

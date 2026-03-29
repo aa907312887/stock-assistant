@@ -125,6 +125,7 @@ class BacktestTaskDetailResponse(BaseModel):
 class BacktestTradeItem(BaseModel):
     stock_code: str
     stock_name: str | None = None
+    trigger_date: date | None = None
     buy_date: date
     buy_price: float
     sell_date: date | None = None

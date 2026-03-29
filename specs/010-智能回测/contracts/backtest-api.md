@@ -26,7 +26,7 @@
 
 | 字段 | 类型 | 必填 | 说明 |
 |------|------|------|------|
-| `strategy_id` | string | 是 | 策略标识（如 `chong_gao_hui_luo`、`panic_pullback`） |
+| `strategy_id` | string | 是 | 策略标识（如 `chong_gao_hui_luo`、`panic_pullback`、`shu_guang_chu_xian`） |
 | `start_date` | string (YYYY-MM-DD) | 是 | 回测起始日期 |
 | `end_date` | string (YYYY-MM-DD) | 是 | 回测结束日期 |
 | `position_amount` | number | 否 | 持仓金额（元），默认 `100000`；每笔固定名义本金，初始可操作现金等于该值；须 > 0 |

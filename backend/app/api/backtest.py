@@ -367,6 +367,7 @@ def api_get_backtest_trades(
         BacktestTradeItem(
             stock_code=r.stock_code,
             stock_name=r.stock_name,
+            trigger_date=r.trigger_date,
             buy_date=r.buy_date,
             buy_price=float(r.buy_price),
             sell_date=r.sell_date,
@@ -388,6 +389,10 @@ def api_get_backtest_trades(
 @router.get("/tasks/{task_id}/filtered-report", response_model=BacktestFilteredReportResponse)
 def api_get_filtered_report(
     task_id: str,
+    trade_type: str | None = Query(
+        default=None,
+        description="closed=已成交平仓；not_traded=选中未交易；unclosed=未平仓；不传=不限",
+    ),
     market_temp_levels: str | None = Query(default=None, description="多选温度级别，逗号分隔"),
     markets: str | None = Query(default=None, description="多选板块，逗号分隔"),
     exchanges: str | None = Query(default=None, description="多选交易所，逗号分隔"),
@@ -410,7 +415,7 @@ def api_get_filtered_report(
     query = db.query(BacktestTradeModel).filter(BacktestTradeModel.task_id == task_id)
     query = _apply_trade_filters(
         query,
-        trade_type=None,
+        trade_type=trade_type,
         market_temp_levels=selected_temp_levels,
         markets=selected_markets,
         exchanges=selected_exchanges,
@@ -422,6 +427,7 @@ def api_get_filtered_report(
     return BacktestFilteredReportResponse(
         task_id=task_id,
         filters={
+            "trade_type": trade_type,
             "market_temp_levels": selected_temp_levels,
             "markets": selected_markets,
             "exchanges": selected_exchanges,
@@ -434,6 +440,10 @@ def api_get_filtered_report(
 @router.get("/tasks/{task_id}/yearly-analysis", response_model=BacktestYearlyAnalysisResponse)
 def api_get_yearly_analysis(
     task_id: str,
+    trade_type: str | None = Query(
+        default=None,
+        description="closed=已成交平仓；not_traded=选中未交易；unclosed=未平仓；不传=不限",
+    ),
     market_temp_levels: str | None = Query(default=None, description="多选温度级别，逗号分隔"),
     markets: str | None = Query(default=None, description="多选板块，逗号分隔"),
     exchanges: str | None = Query(default=None, description="多选交易所，逗号分隔"),
@@ -455,7 +465,7 @@ def api_get_yearly_analysis(
     query = db.query(BacktestTradeModel).filter(BacktestTradeModel.task_id == task_id)
     query = _apply_trade_filters(
         query,
-        trade_type=None,
+        trade_type=trade_type,
         market_temp_levels=selected_temp_levels,
         markets=selected_markets,
         exchanges=selected_exchanges,
@@ -486,6 +496,7 @@ def api_get_yearly_analysis(
     return BacktestYearlyAnalysisResponse(
         task_id=task_id,
         filters={
+            "trade_type": trade_type,
             "market_temp_levels": selected_temp_levels,
             "markets": selected_markets,
             "exchanges": selected_exchanges,

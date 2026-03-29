@@ -17,6 +17,7 @@ class BacktestTrade(Base):
     stock_code: Mapped[str] = mapped_column(String(20), nullable=False)
     stock_name: Mapped[str | None] = mapped_column(String(50), nullable=True)
     buy_date: Mapped[date] = mapped_column(Date, nullable=False)
+    trigger_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     buy_price: Mapped[Decimal] = mapped_column(Numeric(12, 4), nullable=False)
     sell_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     sell_price: Mapped[Decimal | None] = mapped_column(Numeric(12, 4), nullable=True)

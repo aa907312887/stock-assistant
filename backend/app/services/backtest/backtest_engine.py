@@ -127,6 +127,7 @@ def run_backtest(
                 stock_code=trade.stock_code,
                 stock_name=trade.stock_name,
                 buy_date=trade.buy_date,
+                trigger_date=trade.trigger_date,
                 buy_price=trade.buy_price,
                 sell_date=trade.sell_date,
                 sell_price=trade.sell_price,
@@ -175,7 +176,10 @@ def run_backtest(
             "skip_reasons": result.skip_reasons,
             "portfolio_simulation_applied": True,
             "portfolio_calendar_allow_same_day_rebuy_after_sell": allow_same_day_rebuy,
+            # 策略层全部闭仓信号加总（含后来被标为 not_traded 的），仅作对照，非资金仿真结果
             "simple_sum_return_closed": float(sum(t.return_rate or 0 for t in closed_for_slot)),
+            # 单仓仿真后实际成交闭仓的收益率加总（与明细中 trade_type=closed 一致）
+            "simple_sum_return_executed": float(sum(t.return_rate or 0 for t in executed_closed)),
         }
 
         cal_rule = (

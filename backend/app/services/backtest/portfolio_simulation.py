@@ -16,6 +16,31 @@ from typing import Any
 from app.services.strategy.strategy_base import BacktestTrade
 
 
+def _as_not_traded(t: BacktestTrade, *, skip_reason: str) -> BacktestTrade:
+    """
+    选中未成交：顶层不设收益率/卖出价日，避免与已平仓绩效混淆；假设口径写入 extra。
+    """
+    extra: dict[str, Any] = {
+        **(t.extra or {}),
+        "portfolio_status": "selected_not_traded",
+        "skip_reason": skip_reason,
+    }
+    if t.return_rate is not None:
+        extra["hypothetical_return_rate"] = t.return_rate
+    if t.sell_date is not None:
+        extra["hypothetical_sell_date"] = t.sell_date.isoformat()
+    if t.sell_price is not None:
+        extra["hypothetical_sell_price"] = float(t.sell_price)
+    return replace(
+        t,
+        trade_type="not_traded",
+        return_rate=None,
+        sell_date=None,
+        sell_price=None,
+        extra=extra,
+    )
+
+
 @dataclass(frozen=True)
 class PortfolioCapitalSummary:
     """仓位模型下的资金结果摘要（可序列化写入 assumptions_json）。"""
@@ -82,14 +107,7 @@ def simulate_single_slot_portfolio(
     for t in valid:
         if t.buy_date in used_buy_dates:
             skipped += 1
-            nt_extra = {
-                **(t.extra or {}),
-                "portfolio_status": "selected_not_traded",
-                "skip_reason": "same_buy_day",
-            }
-            not_traded_same_day.append(
-                replace(t, trade_type="not_traded", extra=nt_extra),
-            )
+            not_traded_same_day.append(_as_not_traded(t, skip_reason="same_buy_day"))
             continue
         if last_sell_date is not None:
             if allow_rebuy_same_day_as_prior_sell:
@@ -98,14 +116,7 @@ def simulate_single_slot_portfolio(
                 calendar_blocks = t.buy_date <= last_sell_date
             if calendar_blocks:
                 skipped += 1
-                nt_extra = {
-                    **(t.extra or {}),
-                    "portfolio_status": "selected_not_traded",
-                    "skip_reason": "before_previous_sell",
-                }
-                not_traded_before_sell.append(
-                    replace(t, trade_type="not_traded", extra=nt_extra),
-                )
+                not_traded_before_sell.append(_as_not_traded(t, skip_reason="before_previous_sell"))
                 continue
 
         reserve_used_before_open = 0.0
@@ -114,14 +125,7 @@ def simulate_single_slot_portfolio(
             take = min(need, reserve)
             if take < need:
                 skipped += 1
-                nt_extra = {
-                    **(t.extra or {}),
-                    "portfolio_status": "selected_not_traded",
-                    "skip_reason": "insufficient_funds",
-                }
-                not_traded_insufficient_funds.append(
-                    replace(t, trade_type="not_traded", extra=nt_extra),
-                )
+                not_traded_insufficient_funds.append(_as_not_traded(t, skip_reason="insufficient_funds"))
                 continue
             reserve -= take
             cash += take

@@ -101,6 +101,8 @@ export type BacktestTaskDetailResponse = {
 export type BacktestTradeItem = {
   stock_code: string
   stock_name: string | null
+  /** 形态或信号触发日（可与买入日不同） */
+  trigger_date: string | null
   buy_date: string
   buy_price: number
   sell_date: string | null
@@ -231,6 +233,8 @@ export async function getBacktestTrades(
 export async function getBacktestFilteredReport(
   taskId: string,
   params?: {
+    /** closed | not_traded | unclosed；不传为不限 */
+    trade_type?: string
     market_temp_levels?: string[]
     markets?: string[]
     exchanges?: string[]
@@ -238,6 +242,7 @@ export async function getBacktestFilteredReport(
   },
 ) {
   const query = {
+    trade_type: params?.trade_type,
     market_temp_levels: params?.market_temp_levels?.join(','),
     markets: params?.markets?.join(','),
     exchanges: params?.exchanges?.join(','),
@@ -253,6 +258,7 @@ export async function getBacktestFilteredReport(
 export async function getBacktestYearlyAnalysis(
   taskId: string,
   params?: {
+    trade_type?: string
     market_temp_levels?: string[]
     markets?: string[]
     exchanges?: string[]
@@ -260,6 +266,7 @@ export async function getBacktestYearlyAnalysis(
   },
 ) {
   const query = {
+    trade_type: params?.trade_type,
     market_temp_levels: params?.market_temp_levels?.join(','),
     markets: params?.markets?.join(','),
     exchanges: params?.exchanges?.join(','),

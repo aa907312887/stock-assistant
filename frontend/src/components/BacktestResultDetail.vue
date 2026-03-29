@@ -261,6 +261,22 @@
         <div class="section">
           <h4 class="section-title">交易明细</h4>
           <div class="trade-filters">
+            <span class="filter-inline-label">
+              <span>交易状态</span>
+              <el-tooltip content="与下方明细、交叉验证、分年统计一致；选「已成交」仅看仓位仿真实际买入并平仓的记录" placement="top">
+                <el-icon class="hint-icon-sm"><QuestionFilled /></el-icon>
+              </el-tooltip>
+            </span>
+            <el-select
+              v-model="tradeFilters.tradeStatus"
+              clearable
+              placeholder="全部"
+              style="width: 200px"
+            >
+              <el-option label="已成交（实际买入）" value="closed" />
+              <el-option label="选中未交易" value="not_traded" />
+              <el-option label="未平仓" value="unclosed" />
+            </el-select>
             <el-select
               v-model="tradeFilters.exchanges"
               multiple
@@ -349,6 +365,15 @@
           <el-table :data="trades" stripe size="small" v-loading="tradesLoading">
             <el-table-column prop="stock_code" label="代码" width="100" />
             <el-table-column prop="stock_name" label="名称" width="90" />
+            <el-table-column label="触发日" width="110">
+              <template #header>
+                <span>触发日</span>
+                <el-tooltip content="形态或信号触发日（如曙光初现的阳线日），可能与买入日不同" placement="top">
+                  <el-icon class="hint-icon-sm"><QuestionFilled /></el-icon>
+                </el-tooltip>
+              </template>
+              <template #default="{ row }">{{ row.trigger_date || '-' }}</template>
+            </el-table-column>
             <el-table-column prop="buy_date" label="买入日" width="110" />
             <el-table-column label="买入价" width="90" align="right">
               <template #default="{ row }">{{ row.buy_price.toFixed(2) }}</template>
@@ -361,10 +386,17 @@
             </el-table-column>
             <el-table-column label="收益率" width="90" align="right">
               <template #default="{ row }">
-                <span v-if="row.return_rate != null" :class="row.return_rate >= 0 ? 'profit' : 'loss'">
+                <el-tooltip
+                  v-if="row.trade_type === 'not_traded' && row.extra?.hypothetical_return_rate != null"
+                  :content="`假设收益率（未实际成交、不计入汇总）：${row.extra.hypothetical_return_rate >= 0 ? '+' : ''}${(row.extra.hypothetical_return_rate * 100).toFixed(2)}%`"
+                  placement="top"
+                >
+                  <span class="cell-muted">—</span>
+                </el-tooltip>
+                <span v-else-if="row.return_rate != null" :class="row.return_rate >= 0 ? 'profit' : 'loss'">
                   {{ row.return_rate >= 0 ? '+' : '' }}{{ (row.return_rate * 100).toFixed(2) }}%
                 </span>
-                <span v-else>-</span>
+                <span v-else class="cell-muted">—</span>
               </template>
             </el-table-column>
             <el-table-column width="108" align="right">
@@ -593,11 +625,14 @@ const tradesTotal = ref(0)
 const yearlyItems = ref<BacktestYearlyStatItem[]>([])
 const yearlyLoading = ref(false)
 const tradeFilters = ref<{
+  /** 不传或清空=不限；closed=已成交；not_traded=选中未交易；unclosed=未平仓 */
+  tradeStatus: string | undefined
   exchanges: string[]
   market_temp_levels: string[]
   markets: string[]
   tradeYear: number | undefined
 }>({
+  tradeStatus: undefined,
   exchanges: [],
   market_temp_levels: [],
   markets: [],
@@ -634,13 +669,22 @@ const yearOptions = computed(() => {
   return list
 })
 
+function tradeStatusFilterLabel(v: string | undefined): string {
+  if (!v) return '不限'
+  if (v === 'closed') return '已成交（实际买入）'
+  if (v === 'not_traded') return '选中未交易'
+  if (v === 'unclosed') return '未平仓'
+  return v
+}
+
 function formatFilterText(filters: { market_temp_levels: string[]; markets: string[]; exchanges: string[] }) {
   const marketText = (filters.markets || [])
     .map((m) => (m === '__EMPTY__' ? '空板块（北交所等）' : m))
     .join('、') || '不限'
   const tempText = (filters.market_temp_levels || []).join('、') || '不限'
   const exchangeText = (filters.exchanges || []).join('、') || '不限'
-  return `温度=${tempText}；交易所=${exchangeText}；板块=${marketText}`
+  const st = tradeStatusFilterLabel(tradeFilters.value.tradeStatus)
+  return `交易状态=${st}；温度=${tempText}；交易所=${exchangeText}；板块=${marketText}`
 }
 
 async function loadDetail() {
@@ -658,10 +702,16 @@ async function loadDetail() {
   }
 }
 
+function tradeTypeQueryParam(): { trade_type?: string } {
+  const t = tradeFilters.value.tradeStatus
+  return t ? { trade_type: t } : {}
+}
+
 async function loadTrades() {
   tradesLoading.value = true
   try {
     const res = await getBacktestTrades(props.taskId, {
+      ...tradeTypeQueryParam(),
       market_temp_levels: tradeFilters.value.market_temp_levels,
       markets: tradeFilters.value.markets,
       exchanges: tradeFilters.value.exchanges,
@@ -678,6 +728,7 @@ async function loadTrades() {
 
 async function loadFilteredMetrics() {
   const res = await getBacktestFilteredReport(props.taskId, {
+    ...tradeTypeQueryParam(),
     market_temp_levels: tradeFilters.value.market_temp_levels,
     markets: tradeFilters.value.markets,
     exchanges: tradeFilters.value.exchanges,
@@ -690,6 +741,7 @@ async function loadYearlyAnalysis() {
   yearlyLoading.value = true
   try {
     const res = await getBacktestYearlyAnalysis(props.taskId, {
+      ...tradeTypeQueryParam(),
       market_temp_levels: tradeFilters.value.market_temp_levels,
       markets: tradeFilters.value.markets,
       exchanges: tradeFilters.value.exchanges,
@@ -712,6 +764,7 @@ async function loadBestOptions() {
 
 async function applyFiltersAndReload(filters: { market_temp_levels: string[]; markets: string[]; exchanges: string[] }) {
   tradeFilters.value = {
+    tradeStatus: tradeFilters.value.tradeStatus,
     market_temp_levels: [...(filters.market_temp_levels || [])],
     markets: [...(filters.markets || [])],
     exchanges: [...(filters.exchanges || [])],
@@ -733,6 +786,7 @@ function handleTradeFilterSearch() {
 
 function handleTradeFilterReset() {
   tradeFilters.value = {
+    tradeStatus: undefined,
     exchanges: [],
     market_temp_levels: [],
     markets: [],
@@ -863,6 +917,15 @@ watch(() => props.taskId, loadDetail, { immediate: true })
   gap: 8px;
   align-items: center;
   flex-wrap: wrap;
+}
+
+.filter-inline-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+  color: #606266;
+  white-space: nowrap;
 }
 
 .cell-muted {

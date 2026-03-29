@@ -30,6 +30,8 @@ def test_same_buy_date_only_one_executed():
     assert ex[0].stock_code == "000001.SZ"
     assert nt[0].stock_code == "000002.SZ"
     assert nt[0].trade_type == "not_traded"
+    assert nt[0].return_rate is None
+    assert nt[0].extra.get("hypothetical_return_rate") == 0.05
     assert nt[0].extra.get("skip_reason") == "same_buy_day"
     assert summary.skipped_closed_count == 1
     assert summary.same_day_not_traded_count == 1
