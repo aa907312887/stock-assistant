@@ -71,6 +71,9 @@ running → failed     （执行过程异常）
 | `market_temp_score` | DECIMAL(5,2) | NULL | 买入日当天的大盘温度分数（关联 `market_temperature_daily`） |
 | `market_temp_level` | VARCHAR(16) | NULL | 买入日当天的大盘温度级别（如"冰点"/"低温"/"温和"/"高温"/"沸腾"） |
 | `extra_json` | JSON | NULL | 策略特有的附加信息（如冲高回落的 trigger_date、冲高幅度等） |
+| `user_decision` | VARCHAR(16) | NULL | 用户对策略决策的主观评价：`excellent`（优秀）/ `wrong`（错误） |
+| `user_decision_reason` | VARCHAR(2000) | NULL | 评价理由 |
+| `user_decision_at` | DATETIME | NULL | 评价时间 |
 | `created_at` | DATETIME | NOT NULL, DEFAULT CURRENT_TIMESTAMP | 记录创建时间 |
 
 **索引**：

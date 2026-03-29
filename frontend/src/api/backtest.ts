@@ -84,6 +84,15 @@ export type BacktestReport = {
   portfolio_capital?: PortfolioCapitalOut | null
 }
 
+/** 用户对策略决策的主观评价汇总（正确率 = 优秀 ÷ 已评价） */
+export type UserDecisionTaskStats = {
+  trade_count: number
+  judged_count: number
+  excellent_count: number
+  wrong_count: number
+  correctness_rate: number | null
+}
+
 export type BacktestTaskDetailResponse = {
   task_id: string
   strategy_id: string
@@ -96,9 +105,11 @@ export type BacktestTaskDetailResponse = {
   assumptions: Record<string, any> | null
   created_at: string
   finished_at: string | null
+  user_decision_stats?: UserDecisionTaskStats | null
 }
 
 export type BacktestTradeItem = {
+  id: number
   stock_code: string
   stock_name: string | null
   /** 形态或信号触发日（可与买入日不同） */
@@ -114,6 +125,15 @@ export type BacktestTradeItem = {
   market_temp_score: number | null
   market_temp_level: string | null
   extra: Record<string, any> | null
+  /** 用户对策略决策的主观评价：excellent=优秀 wrong=错误 */
+  user_decision?: string | null
+  user_decision_reason?: string | null
+  user_decision_at?: string | null
+}
+
+export type UserDecisionUpdateRequest = {
+  judgment: 'excellent' | 'wrong' | null
+  reason?: string | null
 }
 
 export type BacktestTradeListResponse = {
@@ -205,6 +225,15 @@ export async function getBacktestTasks(params?: {
 
 export async function getBacktestTaskDetail(taskId: string) {
   const res = await http.get<BacktestTaskDetailResponse>(`/backtest/tasks/${taskId}`)
+  return res.data
+}
+
+export async function patchBacktestTradeDecision(
+  taskId: string,
+  tradeId: number,
+  body: UserDecisionUpdateRequest,
+) {
+  const res = await http.patch<BacktestTradeItem>(`/backtest/tasks/${taskId}/trades/${tradeId}`, body)
   return res.data
 }
 

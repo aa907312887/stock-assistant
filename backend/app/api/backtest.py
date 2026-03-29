@@ -7,7 +7,7 @@ import math
 import threading
 import uuid
 from collections import defaultdict
-from datetime import date
+from datetime import date, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import JSONResponse
@@ -37,6 +37,8 @@ from app.schemas.backtest import (
     RunBacktestRequest,
     RunBacktestResponse,
     TempLevelStat,
+    UserDecisionTaskStats,
+    UserDecisionUpdateRequest,
 )
 from app.services.backtest.backtest_engine import run_backtest
 from app.services.strategy.registry import get_strategy
@@ -56,6 +58,48 @@ def _split_csv_param(value: str | None) -> list[str]:
     if not value:
         return []
     return [x.strip() for x in value.split(",") if x.strip()]
+
+
+def _row_to_trade_item(r: BacktestTradeModel) -> BacktestTradeItem:
+    """ORM 行转 API 交易明细项。"""
+    return BacktestTradeItem(
+        id=r.id,
+        stock_code=r.stock_code,
+        stock_name=r.stock_name,
+        trigger_date=r.trigger_date,
+        buy_date=r.buy_date,
+        buy_price=float(r.buy_price),
+        sell_date=r.sell_date,
+        sell_price=float(r.sell_price) if r.sell_price is not None else None,
+        return_rate=float(r.return_rate) if r.return_rate is not None else None,
+        trade_type=r.trade_type,
+        exchange=r.exchange,
+        market=r.market,
+        market_temp_score=float(r.market_temp_score) if r.market_temp_score is not None else None,
+        market_temp_level=r.market_temp_level,
+        extra=r.extra_json,
+        user_decision=r.user_decision,
+        user_decision_reason=r.user_decision_reason,
+        user_decision_at=r.user_decision_at,
+    )
+
+
+def _compute_user_decision_stats(db: Session, task_id: str) -> UserDecisionTaskStats:
+    """汇总用户对某回测任务下全部交易的主观评价（正确率 = 优秀 ÷ 已评价）。"""
+    rows = db.query(BacktestTradeModel).filter(BacktestTradeModel.task_id == task_id).all()
+    trade_count = len(rows)
+    judged = [r for r in rows if r.user_decision in ("excellent", "wrong")]
+    excellent_count = sum(1 for r in judged if r.user_decision == "excellent")
+    wrong_count = sum(1 for r in judged if r.user_decision == "wrong")
+    judged_count = len(judged)
+    correctness_rate = (excellent_count / judged_count) if judged_count > 0 else None
+    return UserDecisionTaskStats(
+        trade_count=trade_count,
+        judged_count=judged_count,
+        excellent_count=excellent_count,
+        wrong_count=wrong_count,
+        correctness_rate=correctness_rate,
+    )
 
 
 def _apply_trade_filters(
@@ -321,7 +365,42 @@ def api_get_backtest_task(task_id: str, db: Session = Depends(get_db)):
         assumptions=assumptions,
         created_at=task.created_at,
         finished_at=task.finished_at,
+        user_decision_stats=_compute_user_decision_stats(db, task_id),
     )
+
+
+@router.patch("/tasks/{task_id}/trades/{trade_id}", response_model=BacktestTradeItem)
+def api_patch_trade_user_decision(
+    task_id: str,
+    trade_id: int,
+    body: UserDecisionUpdateRequest,
+    db: Session = Depends(get_db),
+):
+    """更新单笔交易的人工策略评价（优秀 / 错误），可附理由；`judgment` 为空则清除评价。"""
+    task = db.query(BacktestTask).filter(BacktestTask.task_id == task_id).first()
+    if task is None:
+        raise HTTPException(status_code=404, detail={"code": "TASK_NOT_FOUND", "message": "回测任务不存在"})
+
+    row = (
+        db.query(BacktestTradeModel)
+        .filter(BacktestTradeModel.id == trade_id, BacktestTradeModel.task_id == task_id)
+        .first()
+    )
+    if row is None:
+        raise HTTPException(status_code=404, detail={"code": "TRADE_NOT_FOUND", "message": "交易明细不存在"})
+
+    if body.judgment is None:
+        row.user_decision = None
+        row.user_decision_reason = None
+        row.user_decision_at = None
+    else:
+        row.user_decision = body.judgment
+        row.user_decision_reason = body.reason.strip() if body.reason and body.reason.strip() else None
+        row.user_decision_at = datetime.now()
+
+    db.commit()
+    db.refresh(row)
+    return _row_to_trade_item(row)
 
 
 @router.get("/tasks/{task_id}/trades", response_model=BacktestTradeListResponse)
@@ -363,25 +442,7 @@ def api_get_backtest_trades(
     total = query.count()
     records = query.order_by(BacktestTradeModel.buy_date).offset((page - 1) * page_size).limit(page_size).all()
 
-    items = [
-        BacktestTradeItem(
-            stock_code=r.stock_code,
-            stock_name=r.stock_name,
-            trigger_date=r.trigger_date,
-            buy_date=r.buy_date,
-            buy_price=float(r.buy_price),
-            sell_date=r.sell_date,
-            sell_price=float(r.sell_price) if r.sell_price is not None else None,
-            return_rate=float(r.return_rate) if r.return_rate is not None else None,
-            trade_type=r.trade_type,
-            exchange=r.exchange,
-            market=r.market,
-            market_temp_score=float(r.market_temp_score) if r.market_temp_score is not None else None,
-            market_temp_level=r.market_temp_level,
-            extra=r.extra_json,
-        )
-        for r in records
-    ]
+    items = [_row_to_trade_item(r) for r in records]
 
     return BacktestTradeListResponse(total=total, page=page, page_size=page_size, items=items)
 

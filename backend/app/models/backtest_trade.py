@@ -28,6 +28,10 @@ class BacktestTrade(Base):
     market_temp_score: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
     market_temp_level: Mapped[str | None] = mapped_column(String(16), nullable=True)
     extra_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    # 用户对「该笔策略决策是否合适」的主观评价（用于人工正确率统计）
+    user_decision: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    user_decision_reason: Mapped[str | None] = mapped_column(String(2000), nullable=True)
+    user_decision_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
 
     __table_args__ = (

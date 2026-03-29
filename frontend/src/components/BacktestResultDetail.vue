@@ -185,6 +185,42 @@
             <div class="metric-label">跳过</div>
             <div class="metric-value">{{ detail.report.skipped_count }}</div>
           </div>
+          <template v-if="detail.user_decision_stats && detail.user_decision_stats.trade_count > 0">
+            <div class="metric-item">
+              <div class="metric-label">
+                人工策略正确率
+                <el-tooltip
+                  content="由您在明细中标注的「优秀决策」占已评价笔数之比，为主观判断，与盈亏收益率无关。"
+                  placement="top"
+                >
+                  <el-icon class="hint-icon-sm"><QuestionFilled /></el-icon>
+                </el-tooltip>
+              </div>
+              <div class="metric-value">
+                <template
+                  v-if="
+                    detail.user_decision_stats.judged_count > 0 &&
+                    detail.user_decision_stats.correctness_rate != null
+                  "
+                >
+                  {{ (detail.user_decision_stats.correctness_rate * 100).toFixed(1) }}%
+                </template>
+                <span v-else class="cell-muted">—</span>
+              </div>
+            </div>
+            <div class="metric-item">
+              <div class="metric-label">评价进度</div>
+              <div class="metric-value">
+                {{ detail.user_decision_stats.judged_count }} / {{ detail.user_decision_stats.trade_count }}
+              </div>
+            </div>
+            <div class="metric-item">
+              <div class="metric-label">优秀 / 错误</div>
+              <div class="metric-value">
+                {{ detail.user_decision_stats.excellent_count }} / {{ detail.user_decision_stats.wrong_count }}
+              </div>
+            </div>
+          </template>
         </div>
 
         <!-- 大盘温度分组统计 -->
@@ -363,12 +399,33 @@
             </template>
           </el-alert>
           <el-table :data="trades" stripe size="small" v-loading="tradesLoading">
-            <el-table-column prop="stock_code" label="代码" width="100" />
+            <el-table-column width="108">
+              <template #header>
+                <span>代码</span>
+                <el-tooltip content="点击在东方财富打开该股行情（新标签页）" placement="top">
+                  <el-icon class="hint-icon-sm"><QuestionFilled /></el-icon>
+                </el-tooltip>
+              </template>
+              <template #default="{ row }">
+                <a
+                  v-if="eastMoneyUrl(row)"
+                  class="code-link"
+                  :href="eastMoneyUrl(row)!"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  @click.stop
+                >{{ row.stock_code }}</a>
+                <span v-else>{{ row.stock_code }}</span>
+              </template>
+            </el-table-column>
             <el-table-column prop="stock_name" label="名称" width="90" />
             <el-table-column label="触发日" width="110">
               <template #header>
                 <span>触发日</span>
-                <el-tooltip content="形态或信号触发日（如曙光初现的阳线日），可能与买入日不同" placement="top">
+                <el-tooltip
+                  content="形态或信号触发日（如曙光初现的阳线日、早晨十字星的第三根阳线日），可能与买入日不同"
+                  placement="top"
+                >
                   <el-icon class="hint-icon-sm"><QuestionFilled /></el-icon>
                 </el-tooltip>
               </template>
@@ -384,7 +441,18 @@
             <el-table-column label="卖出价" width="90" align="right">
               <template #default="{ row }">{{ row.sell_price != null ? row.sell_price.toFixed(2) : '-' }}</template>
             </el-table-column>
-            <el-table-column label="收益率" width="90" align="right">
+            <el-table-column width="100" align="right">
+              <template #header>
+                <span>收益率</span>
+                <el-tooltip placement="top">
+                  <template #content>
+                    <div style="max-width: 280px">
+                      已平仓：单笔收益率相对买入价。止损/止盈阈值因策略而异（如曙光初现约−10%、早晨十字星约−8%；止盈多为收盘≥买入×1.10 的当日收盘价），以离场原因为准。
+                    </div>
+                  </template>
+                  <el-icon class="hint-icon-sm"><QuestionFilled /></el-icon>
+                </el-tooltip>
+              </template>
               <template #default="{ row }">
                 <el-tooltip
                   v-if="row.trade_type === 'not_traded' && row.extra?.hypothetical_return_rate != null"
@@ -397,6 +465,18 @@
                   {{ row.return_rate >= 0 ? '+' : '' }}{{ (row.return_rate * 100).toFixed(2) }}%
                 </span>
                 <span v-else class="cell-muted">—</span>
+              </template>
+            </el-table-column>
+            <el-table-column width="120">
+              <template #header>
+                <span>离场</span>
+                <el-tooltip content="止损比例因策略而异（如−10%或−8%）；止盈多为收盘≥买入×1.10 按当日收盘价。详见离场原因。" placement="top">
+                  <el-icon class="hint-icon-sm"><QuestionFilled /></el-icon>
+                </el-tooltip>
+              </template>
+              <template #default="{ row }">
+                <span v-if="row.trade_type === 'closed'">{{ exitReasonLabel(row.extra) }}</span>
+                <span v-else class="cell-muted">-</span>
               </template>
             </el-table-column>
             <el-table-column width="108" align="right">
@@ -469,6 +549,50 @@
                   size="small"
                 >选中未交易</el-tag>
                 <el-tag v-else type="warning" size="small">未平仓</el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column label="策略评价" min-width="210" fixed="right">
+              <template #header>
+                <span>策略评价</span>
+                <el-tooltip
+                  content="主观判断该笔策略信号是否合适；可填写理由。用于统计人工正确率。"
+                  placement="top"
+                >
+                  <el-icon class="hint-icon-sm"><QuestionFilled /></el-icon>
+                </el-tooltip>
+              </template>
+              <template #default="{ row }">
+                <div class="decision-cell">
+                  <div class="decision-row">
+                    <template v-if="row.user_decision === 'excellent'">
+                      <el-tag type="success" size="small">优秀</el-tag>
+                    </template>
+                    <template v-else-if="row.user_decision === 'wrong'">
+                      <el-tag type="danger" size="small">错误</el-tag>
+                    </template>
+                    <span v-else class="cell-muted">未评</span>
+                    <el-tooltip
+                      v-if="row.user_decision_reason"
+                      :content="row.user_decision_reason"
+                      placement="top"
+                    >
+                      <el-button link type="primary" size="small">理由</el-button>
+                    </el-tooltip>
+                  </div>
+                  <div class="decision-actions">
+                    <el-button size="small" @click="openDecisionDialog(row, 'excellent')">优秀</el-button>
+                    <el-button size="small" @click="openDecisionDialog(row, 'wrong')">错误</el-button>
+                    <el-button
+                      v-if="row.user_decision"
+                      size="small"
+                      link
+                      type="danger"
+                      @click="clearDecision(row)"
+                    >
+                      清除
+                    </el-button>
+                  </div>
+                </div>
               </template>
             </el-table-column>
             <el-table-column label="未交易原因" width="130">
@@ -551,11 +675,43 @@
     <template v-else-if="detail && detail.status === 'running'">
       <el-alert title="回测执行中，请稍候..." type="info" :closable="false" show-icon />
     </template>
+
+    <el-dialog
+      v-model="decisionDialogVisible"
+      title="策略决策评价"
+      width="440px"
+      destroy-on-close
+      @closed="resetDecisionDialog"
+    >
+      <el-form label-position="top">
+        <el-form-item label="结论">
+          <el-radio-group v-model="decisionForm.judgment">
+            <el-radio value="excellent">优秀决策</el-radio>
+            <el-radio value="wrong">错误决策</el-radio>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item label="理由（可选）">
+          <el-input
+            v-model="decisionForm.reason"
+            type="textarea"
+            :rows="4"
+            maxlength="2000"
+            show-word-limit
+            placeholder="可简要说明为何认为该笔策略决策合理或不合理"
+          />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="decisionDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="decisionSaving" @click="submitDecision">保存</el-button>
+      </template>
+    </el-dialog>
   </el-card>
 </template>
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import { ElMessage } from 'element-plus'
 import { QuestionFilled } from '@element-plus/icons-vue'
 import {
   getBacktestBestOptions,
@@ -563,12 +719,14 @@ import {
   getBacktestTaskDetail,
   getBacktestTrades,
   getBacktestYearlyAnalysis,
+  patchBacktestTradeDecision,
   type BacktestBestOptionsResponse,
   type BacktestFilteredMetrics,
   type BacktestTaskDetailResponse,
   type BacktestTradeItem,
   type BacktestYearlyStatItem,
 } from '@/api/backtest'
+import { eastMoneyQuoteUrl } from '@/utils/eastMoneyQuoteUrl'
 
 const props = defineProps<{
   taskId: string
@@ -579,6 +737,59 @@ defineEmits<{
 }>()
 
 const detail = ref<BacktestTaskDetailResponse | null>(null)
+
+const decisionDialogVisible = ref(false)
+const decisionSaving = ref(false)
+const decisionTradeRow = ref<BacktestTradeItem | null>(null)
+const decisionForm = ref<{ judgment: 'excellent' | 'wrong'; reason: string }>({
+  judgment: 'excellent',
+  reason: '',
+})
+
+function resetDecisionDialog() {
+  decisionTradeRow.value = null
+  decisionForm.value = { judgment: 'excellent', reason: '' }
+}
+
+function openDecisionDialog(row: BacktestTradeItem, preset: 'excellent' | 'wrong') {
+  decisionTradeRow.value = row
+  decisionForm.value = {
+    judgment: preset,
+    reason: row.user_decision_reason ?? '',
+  }
+  decisionDialogVisible.value = true
+}
+
+async function submitDecision() {
+  const row = decisionTradeRow.value
+  if (!row) return
+  decisionSaving.value = true
+  try {
+    await patchBacktestTradeDecision(props.taskId, row.id, {
+      judgment: decisionForm.value.judgment,
+      reason: decisionForm.value.reason.trim() || null,
+    })
+    ElMessage.success('已保存')
+    decisionDialogVisible.value = false
+    await loadDetail()
+    await loadTrades()
+  } catch {
+    ElMessage.error('保存失败')
+  } finally {
+    decisionSaving.value = false
+  }
+}
+
+async function clearDecision(row: BacktestTradeItem) {
+  try {
+    await patchBacktestTradeDecision(props.taskId, row.id, { judgment: null })
+    ElMessage.success('已清除评价')
+    await loadDetail()
+    await loadTrades()
+  } catch {
+    ElMessage.error('操作失败')
+  }
+}
 
 /** 展示千分位整数金额（元） */
 function fmtMoney(n: number): string {
@@ -600,6 +811,26 @@ function skipReasonLabel(extra: Record<string, unknown> | null | undefined): str
   const r = extra?.skip_reason
   if (typeof r !== 'string' || !r) return '-'
   return SKIP_REASON_LABEL[r] ?? r
+}
+
+const EXIT_REASON_LABEL: Record<string, string> = {
+  stop_loss_8pct: '止损(约−8%)',
+  take_profit_10pct: '止盈(≥+10%)',
+  /** 历史回测记录（改阈值前） */
+  stop_loss_6pct: '止损(约−6%)',
+  stop_loss_10pct: '止损(约−10%)',
+  /** 旧版：曾达+10%后破 MA5 才卖 */
+  break_ma5_after_arm: '破MA5(武装后)',
+}
+
+function exitReasonLabel(extra: Record<string, unknown> | null | undefined): string {
+  const r = extra?.exit_reason
+  if (typeof r !== 'string' || !r) return '-'
+  return EXIT_REASON_LABEL[r] ?? r
+}
+
+function eastMoneyUrl(row: BacktestTradeItem): string | null {
+  return eastMoneyQuoteUrl(row.stock_code, row.exchange)
 }
 
 /** 有已落库交易、未平仓、或存在被仓位规则挡住的闭仓信号时展示报告主体 */
@@ -926,6 +1157,14 @@ watch(() => props.taskId, loadDetail, { immediate: true })
   font-size: 13px;
   color: #606266;
   white-space: nowrap;
+}
+
+.code-link {
+  color: var(--el-color-primary);
+  text-decoration: none;
+}
+.code-link:hover {
+  text-decoration: underline;
 }
 
 .cell-muted {

@@ -1,6 +1,6 @@
 # 接口契约：智能回测 API
 
-**日期**: 2026-03-26（2026-03-29 修订：`report.portfolio_capital`、总收益率资金口径）| **路由前缀**: `/api/backtest`
+**日期**: 2026-03-26（2026-03-29 修订：`report.portfolio_capital`、总收益率资金口径；2026-03-29 增补：交易明细人工评价与 `user_decision_stats`）| **路由前缀**: `/api/backtest`
 
 所有接口挂载在 `backend/app/api/backtest.py` 路由模块下，通过 `app/main.py` 注册。
 
@@ -200,16 +200,57 @@
     "fee_model": "无手续费",
     "position_model": "单仓位 10 万：同一买入日仅成交一笔；卖出日后方可再开仓；本金不足时由预备金池（初始 10 万）补足后再开仓"
   },
+  "user_decision_stats": {
+    "trade_count": 120,
+    "judged_count": 15,
+    "excellent_count": 10,
+    "wrong_count": 5,
+    "correctness_rate": 0.6667
+  },
   "created_at": "2026-03-26T14:30:00",
   "finished_at": "2026-03-26T14:33:42"
 }
 ```
+
+| 字段 | 说明 |
+|------|------|
+| `user_decision_stats` | 用户对策略决策的主观评价汇总：`correctness_rate` = 优秀决策数 ÷ 已评价笔数；无已评价时为 `null` |
 
 ### 错误
 
 | 状态码 | code | 场景 |
 |--------|------|------|
 | 404 | `TASK_NOT_FOUND` | task_id 不存在 |
+
+---
+
+## 3.1 更新单笔交易的人工评价
+
+**`PATCH /api/backtest/tasks/{task_id}/trades/{trade_id}`**
+
+用户对某笔明细标注「优秀决策」或「错误决策」，并可附理由；与盈亏统计独立。
+
+### 请求体
+
+```json
+{ "judgment": "excellent", "reason": "信号与当时大盘环境匹配" }
+```
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `judgment` | string \| null | `excellent` / `wrong`；`null` 表示清除评价与理由 |
+| `reason` | string \| null | 可选，最长 2000 字 |
+
+### 响应（200）
+
+与下节「交易明细列表」中单条元素一致（含 `id`、`user_decision`、`user_decision_reason`、`user_decision_at`）。
+
+### 错误
+
+| 状态码 | code | 场景 |
+|--------|------|------|
+| 404 | `TASK_NOT_FOUND` | task_id 不存在 |
+| 404 | `TRADE_NOT_FOUND` | trade_id 不属于该任务或不存在 |
 
 ---
 
@@ -243,6 +284,7 @@
   "page_size": 50,
   "items": [
     {
+      "id": 1001,
       "stock_code": "000001.SZ",
       "stock_name": "平安银行",
       "buy_date": "2024-03-15",
@@ -259,9 +301,13 @@
         "trigger_date": "2024-03-14",
         "surge_pct": 0.1123,
         "pullback_pct": 0.0356
-      }
+      },
+      "user_decision": "excellent",
+      "user_decision_reason": null,
+      "user_decision_at": "2026-03-29T10:00:00"
     },
     {
+      "id": 1002,
       "stock_code": "600519.SH",
       "stock_name": "贵州茅台",
       "buy_date": "2024-12-28",
@@ -276,11 +322,19 @@
       "market_temp_level": "温和",
       "extra": {
         "trigger_date": "2024-12-27"
-      }
+      },
+      "user_decision": null,
+      "user_decision_reason": null,
+      "user_decision_at": null
     }
   ]
 }
 ```
+
+| 字段 | 说明 |
+|------|------|
+| `id` | 明细主键，用于 PATCH 评价 |
+| `user_decision` | `excellent` / `wrong` / `null`（未评） |
 
 ### 错误
 

@@ -8,6 +8,7 @@ from app.services.strategy.strategy_base import StockStrategy
 from app.services.strategy.strategies.chong_gao_hui_luo import ChongGaoHuiLuoStrategy
 from app.services.strategy.strategies.panic_pullback import PanicPullbackStrategy
 from app.services.strategy.strategies.shu_guang_chu_xian import ShuGuangChuXianStrategy
+from app.services.strategy.strategies.zao_chen_shi_zi_xing import ZaoChenShiZiXingStrategy
 
 
 @dataclass(frozen=True)
@@ -22,6 +23,7 @@ def list_strategies() -> list[StockStrategy]:
         ChongGaoHuiLuoStrategy(),
         PanicPullbackStrategy(),
         ShuGuangChuXianStrategy(),
+        ZaoChenShiZiXingStrategy(),
     ]
 
 

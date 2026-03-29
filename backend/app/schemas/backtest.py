@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -108,6 +109,16 @@ class BacktestReport(BaseModel):
     portfolio_capital: PortfolioCapitalOut | None = None
 
 
+class UserDecisionTaskStats(BaseModel):
+    """用户对策略决策的主观评价汇总：正确率 = 优秀决策数 ÷ 已评价笔数。"""
+
+    trade_count: int
+    judged_count: int
+    excellent_count: int
+    wrong_count: int
+    correctness_rate: float | None = None
+
+
 class BacktestTaskDetailResponse(BaseModel):
     task_id: str
     strategy_id: str
@@ -120,9 +131,18 @@ class BacktestTaskDetailResponse(BaseModel):
     assumptions: dict | None = None
     created_at: datetime
     finished_at: datetime | None = None
+    user_decision_stats: UserDecisionTaskStats | None = None
+
+
+class UserDecisionUpdateRequest(BaseModel):
+    """更新单笔交易的人工评价；`judgment` 置空表示清除评价与理由。"""
+
+    judgment: Literal["excellent", "wrong"] | None = None
+    reason: str | None = Field(default=None, max_length=2000)
 
 
 class BacktestTradeItem(BaseModel):
+    id: int
     stock_code: str
     stock_name: str | None = None
     trigger_date: date | None = None
@@ -137,6 +157,9 @@ class BacktestTradeItem(BaseModel):
     market_temp_score: float | None = None
     market_temp_level: str | None = None
     extra: dict | None = None
+    user_decision: str | None = None
+    user_decision_reason: str | None = None
+    user_decision_at: datetime | None = None
 
 
 class BacktestTradeListResponse(BaseModel):
