@@ -106,6 +106,7 @@ export type BacktestTaskDetailResponse = {
   created_at: string
   finished_at: string | null
   user_decision_stats?: UserDecisionTaskStats | null
+  strategy_description: string | null
 }
 
 export type BacktestTradeItem = {

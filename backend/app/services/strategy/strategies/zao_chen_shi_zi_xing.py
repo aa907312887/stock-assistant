@@ -77,7 +77,10 @@ class _Params:
     min_first_yin_drop_pct: float = 0.02
     # 止损 8%（曙光初现策略为 10%）
     stop_loss_pct: float = 0.08
-    arm_profit_pct: float = 0.10
+    # 移动止盈触发阈值：涨幅达到 15% 后启动追踪
+    arm_profit_trigger_pct: float = 0.15
+    # 移动止盈回撤比例：从最高价回落 5% 时止盈
+    trailing_stop_pct: float = 0.05
     max_close_to_cum_hist_high_ratio: float = 0.5
     weak_lookback_days: int = 7
     min_bearish_days_in_lookback: int = 5
@@ -90,7 +93,7 @@ class _Params:
 
 class ZaoChenShiZiXingStrategy(StockStrategy):
     strategy_id = "zao_chen_shi_zi_xing"
-    version = "v1.7.0"
+    version = "v1.8.0"
 
     def describe(self) -> StrategyDescriptor:
         return StrategyDescriptor(
@@ -100,7 +103,7 @@ class ZaoChenShiZiXingStrategy(StockStrategy):
             short_description=(
                 "跌势末期三根K线：T−2大阴(跌≥2%)→T−1锤头(相对T−2涨跌≤1%)→T阳线(实体≥3%)；"
                 "前期T−9…T−3至少5阴且累计跌≥10%；T日跌势MA+收盘≤历史高50%（不强制放量）；"
-                "站上MA5买入；本策略止损8%固定×0.92（曙光初现为10%）；收盘≥买入×1.1当日止盈。"
+                "站上MA5买入；止损8%固定×0.92；涨幅≥15%后从最高回落5%止盈。"
             ),
             description=(
                 "与「曙光初现」的差异：**形态为连续三根 K 线**（大阴线—锤头—阳线），信号触发日为第三根**阳线日 T**，"
@@ -110,21 +113,24 @@ class ZaoChenShiZiXingStrategy(StockStrategy):
                 "第三根（T）须为阳线且实体涨幅（相对开盘）至少 3%。"
                 "T 日须为跌势结构（MA5<MA10<MA20 且收盘仍低于 MA20），收盘价不高于当日 cum_hist_high 的 50%。"
                 "**本策略不校验阳线放量**（与曙光初现的 1.5 倍均量条件不同）。"
-                "**买入与止盈规则与曙光初现一致**；**止损仅本策略为 8%**（曙光初现为 10%）：自 T 日起首次收盘价站上 MA5 买入；"
-                "持仓后收盘价≤买入价×0.92 则无条件止损，卖出价固定买入价×0.92（亏损恒 8%）；"
-                "若收盘价≥买入价×1.10，则当日按收盘价卖出（止盈）；否则持有至回测结束可能未平仓。"
+                "**买入规则与曙光初现一致**；**止损仅本策略为 8%**（曙光初现为 10%）：自 T 日起首次收盘价站上 MA5 买入；"
+                "持仓后收盘价≤买入价×0.92 则无条件止损，卖出价固定买入价×0.92（亏损恒 8%）。"
+                "**止盈规则**：涨幅达到 15% 后启动移动止盈追踪，当价格从持仓期间最高价回落 5% 时按当日收盘价卖出；"
+                "涨幅未达 15% 时不触发止盈，继续持有。"
             ),
             assumptions=[
                 "剔除 ST/*ST；买卖价均为日线收盘价。",
                 "触发日 T 为第三根阳线日；买入日为自 T 日起首次 close>MA5 的日期。",
                 "锤头判定见策略代码 is_hammer_bar（实体偏上、下影显著长于实体等）。",
                 "不对 T 日成交量相对前 7 日均量做强制要求。",
-                "止损为 8% 固定（曙光初现策略为 10%）；止盈与曙光初现一致。",
+                "止损为 8% 固定（曙光初现策略为 10%）。",
+                "移动止盈：涨幅≥15%后，从最高价回落≥5%时按收盘价卖出。",
                 "同一标的出现未平仓笔后不再扫描该标的后续形态。",
             ],
             risks=[
                 "均线滞后；震荡行情反复穿线。",
                 "数据缺失或停牌可能导致无法成交或长期未平仓。",
+                "移动止盈可能在大幅上涨后回撤时才卖出，错过更高点。",
             ],
             route_path="/strategy/zao-chen-shi-zi-xing",
         )
@@ -172,14 +178,15 @@ class ZaoChenShiZiXingStrategy(StockStrategy):
                 as_of_date=dd,
                 assumptions={
                     "data_granularity": "日线",
-                    "price_type": "买入日为首次 close>MA5 的收盘价；止损时卖价固定买入×0.92；止盈时卖价为触发日收盘价（≥买入×1.1）",
+                    "price_type": "买入日为首次 close>MA5 的收盘价；止损时卖价固定买入×0.92；移动止盈时卖价为触发日收盘价",
                     "pattern": "T−2大阴+T−1锤头+T阳线；跌势窗口T−9…T−3；收盘≤历史高50%；不强制放量；买入=首次 close>MA5",
                     "universe": "非 ST/*ST 全市场",
                 },
                 params={
                     "min_first_yin_drop_pct": p.min_first_yin_drop_pct,
                     "stop_loss_pct": p.stop_loss_pct,
-                    "arm_profit_pct": p.arm_profit_pct,
+                    "arm_profit_trigger_pct": p.arm_profit_trigger_pct,
+                    "trailing_stop_pct": p.trailing_stop_pct,
                     "max_close_to_cum_hist_high_ratio": p.max_close_to_cum_hist_high_ratio,
                     "weak_lookback_days": p.weak_lookback_days,
                     "min_bearish_days_in_lookback": p.min_bearish_days_in_lookback,
@@ -382,25 +389,48 @@ class ZaoChenShiZiXingStrategy(StockStrategy):
 
                 buy_price = round(float(buy_bar.close), 4)
                 sl_px = round(buy_price * (1.0 - p.stop_loss_pct), 4)
-                arm_px = round(buy_price * (1.0 + p.arm_profit_pct), 4)
+                # 移动止盈触发价格：涨幅达 15%
+                arm_trigger_px = round(buy_price * (1.0 + p.arm_profit_trigger_pct), 4)
 
                 sell_idx: int | None = None
                 exit_reason: str | None = None
+                # 移动止盈追踪：最高价
+                holding_high: float = buy_price
+                # 是否已触发移动止盈追踪（涨幅达到 15%）
+                trailing_active: bool = False
+
                 for k in range(buy_idx + 1, len(bars_list)):
                     bk = bars_list[k]
                     if bk.trade_date > end_date:
                         break
-                    if not bk.close:
+                    if not (bk.close and bk.high):
                         continue
                     ck = float(bk.close)
+                    hk = float(bk.high)
+
+                    # 更新持仓期间最高价
+                    if hk > holding_high:
+                        holding_high = hk
+
+                    # 止损：收盘价 <= 买入价 × 0.92
                     if ck <= buy_price * (1.0 - p.stop_loss_pct):
                         sell_idx = k
                         exit_reason = "stop_loss_8pct"
                         break
-                    if ck >= buy_price * (1.0 + p.arm_profit_pct):
-                        sell_idx = k
-                        exit_reason = "take_profit_10pct"
-                        break
+
+                    # 移动止盈逻辑
+                    # 当收盘价达到触发价格（涨幅≥15%）时，启动移动止盈追踪
+                    if ck >= arm_trigger_px:
+                        trailing_active = True
+
+                    # 如果已启动移动止盈追踪，检查是否从最高价回落 5%
+                    if trailing_active:
+                        # 从最高价回落 5% 时止盈
+                        trailing_stop_px = holding_high * (1.0 - p.trailing_stop_pct)
+                        if ck <= trailing_stop_px:
+                            sell_idx = k
+                            exit_reason = "trailing_stop_5pct"
+                            break
 
                 pattern_yin_date = bar_yin.trade_date
                 pattern_hammer_date = bar_hammer.trade_date
@@ -448,9 +478,10 @@ class ZaoChenShiZiXingStrategy(StockStrategy):
                     "buy_rule": "first_close_above_ma5_from_yang_day",
                     "stop_loss_pct": p.stop_loss_pct,
                     "stop_loss_price": sl_px,
-                    "arm_profit_pct": p.arm_profit_pct,
-                    "arm_profit_price": arm_px,
-                    "sell_rule": "stop_loss_fixed_minus_8pct_or_take_profit_10pct_at_close",
+                    "arm_profit_trigger_pct": p.arm_profit_trigger_pct,
+                    "arm_profit_trigger_price": arm_trigger_px,
+                    "trailing_stop_pct": p.trailing_stop_pct,
+                    "sell_rule": "stop_loss_fixed_8pct_or_trailing_stop_5pct_after_15pct_gain",
                     "stop_loss_fill_at_limit_price": True,
                     **vol_diag,
                 }
@@ -481,11 +512,14 @@ class ZaoChenShiZiXingStrategy(StockStrategy):
                     sell_price = sl_px
                     return_rate = round(-p.stop_loss_pct, 4)
                 else:
+                    # 移动止盈：按当日收盘价卖出
                     sell_price = round(close_raw, 4)
                     return_rate = round((close_raw - buy_price) / buy_price, 4)
                 closed_extra: dict[str, Any] = {
                     **extra_base,
                     "exit_reason": exit_reason,
+                    "holding_high": round(holding_high, 4),
+                    "trailing_active": trailing_active,
                     "buy_ma5": round(float(buy_bar.ma5), 4) if buy_bar.ma5 else None,
                     "buy_ma20": round(float(buy_bar.ma20), 4) if buy_bar.ma20 else None,
                     "sell_ma20": round(float(sell_bar.ma20), 4) if sell_bar.ma20 else None,
@@ -493,6 +527,8 @@ class ZaoChenShiZiXingStrategy(StockStrategy):
                 }
                 if exit_reason == "stop_loss_8pct":
                     closed_extra["trigger_day_close"] = round(close_raw, 4)
+                if exit_reason == "trailing_stop_5pct":
+                    closed_extra["trailing_stop_triggered_price"] = round(holding_high * (1.0 - p.trailing_stop_pct), 4)
                 trades.append(
                     BacktestTrade(
                         stock_code=code,

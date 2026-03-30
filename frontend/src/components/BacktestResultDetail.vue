@@ -41,6 +41,19 @@
           {{ detail.report.conclusion }}
         </div>
 
+        <!-- 策略逻辑说明 -->
+        <div v-if="detail.strategy_description" class="section strategy-description">
+          <h4 class="section-title">
+            策略逻辑
+            <el-tooltip content="本次回测使用的策略买入/卖出条件与参数" placement="top">
+              <el-icon class="hint-icon-sm"><QuestionFilled /></el-icon>
+            </el-tooltip>
+          </h4>
+          <el-card shadow="never" class="strategy-card">
+            <pre class="strategy-text">{{ detail.strategy_description }}</pre>
+          </el-card>
+        </div>
+
         <div v-if="detail.report.portfolio_capital" class="section portfolio-capital">
           <h4 class="section-title">
             资金账户（仓位约束）
@@ -816,6 +829,8 @@ function skipReasonLabel(extra: Record<string, unknown> | null | undefined): str
 const EXIT_REASON_LABEL: Record<string, string> = {
   stop_loss_8pct: '止损(约−8%)',
   take_profit_10pct: '止盈(≥+10%)',
+  /** 早晨十字星移动止盈：涨幅≥15%后从最高回落5% */
+  trailing_stop_5pct: '移动止盈(≥+15%后回落5%)',
   /** 历史回测记录（改阈值前） */
   stop_loss_6pct: '止损(约−6%)',
   stop_loss_10pct: '止损(约−10%)',
@@ -1195,5 +1210,21 @@ watch(() => props.taskId, loadDetail, { immediate: true })
 }
 .assumption-tag {
   font-size: 12px;
+}
+
+.strategy-description {
+  margin-top: 16px;
+}
+.strategy-card {
+  background: #fafafa;
+}
+.strategy-text {
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.6;
+  margin: 0;
+  color: #303133;
 }
 </style>

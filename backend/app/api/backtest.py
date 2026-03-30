@@ -366,6 +366,7 @@ def api_get_backtest_task(task_id: str, db: Session = Depends(get_db)):
         created_at=task.created_at,
         finished_at=task.finished_at,
         user_decision_stats=_compute_user_decision_stats(db, task_id),
+        strategy_description=task.strategy_description,
     )
 
 

@@ -132,6 +132,7 @@ class BacktestTaskDetailResponse(BaseModel):
     created_at: datetime
     finished_at: datetime | None = None
     user_decision_stats: UserDecisionTaskStats | None = None
+    strategy_description: str | None = None
 
 
 class UserDecisionUpdateRequest(BaseModel):

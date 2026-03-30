@@ -22,6 +22,7 @@ from app.services.backtest.backtest_report import (
 from app.services.backtest.portfolio_simulation import simulate_single_slot_portfolio
 from app.services.strategy.registry import get_strategy
 from app.services.strategy.strategy_base import BacktestTrade
+from app.services.strategy.strategy_descriptions import STRATEGY_DESCRIPTIONS
 
 logger = logging.getLogger(__name__)
 
@@ -88,6 +89,9 @@ def run_backtest(
 ) -> None:
     """后台线程中执行的回测主流程。"""
     task = db.query(BacktestTask).filter(BacktestTask.task_id == task_id).one()
+
+    # 在回测开始时，将当时的策略描述持久化到数据库，确保历史记录准确
+    task.strategy_description = STRATEGY_DESCRIPTIONS.get(strategy_id)
 
     try:
         strategy = get_strategy(strategy_id)

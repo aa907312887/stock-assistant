@@ -33,6 +33,7 @@ class BacktestTask(Base):
 
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     assumptions_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    strategy_description: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
     finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
