@@ -33,6 +33,7 @@ _BUSINESS_RUN_SYNC = "app.services.stock_sync_service.run_sync"
 _JOB_MARKET_TEMP = "market_temperature_sync"
 _JOB_STRATEGY_CGHL = "strategy_chong_gao_hui_luo_daily"
 _JOB_STRATEGY_PANIC = "strategy_panic_pullback_daily"
+_JOB_STRATEGY_BCB = "strategy_bottom_consolidation_breakout_daily"
 
 _scheduler: BackgroundScheduler | None = None
 CRON_HOUR = 17
@@ -159,6 +160,33 @@ def _job_strategy_panic_pullback_daily() -> None:
         db.close()
 
 
+def _job_strategy_bottom_consolidation_breakout_daily() -> None:
+    """定时任务：交易日每日 17:20（上海时区）筛选「底部盘整突破」当日候选并落库。"""
+    today = date.today()
+    latest = get_latest_open_trade_date(today)
+    if latest is None or latest != today:
+        logger.info("底部盘整突破定时筛选跳过：今日非交易日（最近开市日=%s）", latest)
+        return
+
+    db = SessionLocal()
+    try:
+        execute_strategy(db, strategy_id="bottom_consolidation_breakout", as_of_date=today)
+        logger.info("底部盘整突破定时筛选完成 as_of_date=%s", today)
+    except StrategyDataNotReadyError as e:
+        logger.info("底部盘整突破定时筛选跳过：数据未就绪 as_of_date=%s reason=%s", today, e)
+    except Exception as e:
+        log_scheduled_job_failure(
+            logger,
+            job_id=_JOB_STRATEGY_BCB,
+            scheduler_entry="app.core.scheduler._job_strategy_bottom_consolidation_breakout_daily",
+            business_callable="app.services.strategy.strategy_execute_service.execute_strategy",
+            external_api=None,
+            exc=e,
+        )
+    finally:
+        db.close()
+
+
 def _mark_stale_running_jobs_failed() -> None:
     """将长时间停留在 running 的记录标为失败，避免进程中断后页面永远显示运行中。"""
     db = SessionLocal()
@@ -217,6 +245,12 @@ def start_scheduler() -> None:
         _job_strategy_panic_pullback_daily,
         trigger=CronTrigger(hour=17, minute=20, timezone=TIMEZONE),
         id=_JOB_STRATEGY_PANIC,
+        replace_existing=True,
+    )
+    _scheduler.add_job(
+        _job_strategy_bottom_consolidation_breakout_daily,
+        trigger=CronTrigger(hour=17, minute=20, timezone=TIMEZONE),
+        id=_JOB_STRATEGY_BCB,
         replace_existing=True,
     )
     _scheduler.start()
