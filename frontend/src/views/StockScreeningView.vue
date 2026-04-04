@@ -177,6 +177,14 @@
         <el-table-column prop="pe_ttm" label="PE TTM" width="100" align="right">
           <template #default="{ row }">{{ formatNum(row.pe_ttm) }}</template>
         </el-table-column>
+        <el-table-column prop="pe_percentile" label="PE百分位" width="100" align="right">
+          <template #default="{ row }">
+            <span v-if="row.pe_percentile != null" :style="{ color: pePercentileColor(row.pe_percentile) }">
+              {{ formatNum(row.pe_percentile) }}%
+            </span>
+            <span v-else>-</span>
+          </template>
+        </el-table-column>
         <el-table-column prop="pb" label="PB" width="90" align="right">
           <template #default="{ row }">{{ formatNum(row.pb) }}</template>
         </el-table-column>
@@ -261,6 +269,14 @@ function formatNum(v: number | string | null | undefined): string {
   const n = typeof v === 'number' ? v : Number(v)
   if (Number.isNaN(n)) return '-'
   return n.toLocaleString(undefined, { maximumFractionDigits: 4 })
+}
+
+function pePercentileColor(v: number): string {
+  if (v <= 20) return '#16a34a'   // 深绿 - 历史低估
+  if (v <= 40) return '#65a30d'   // 浅绿
+  if (v <= 60) return '#6b7280'   // 灰色 - 中性
+  if (v <= 80) return '#ea580c'   // 橙色
+  return '#dc2626'                // 红色 - 历史高估
 }
 
 function buildParams() {

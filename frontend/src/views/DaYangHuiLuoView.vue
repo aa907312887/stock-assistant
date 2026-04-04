@@ -41,7 +41,50 @@
         <div class="cardTitle">口径说明</div>
       </template>
       <div class="note">
-        当前筛选当日出现低位大阳放量形态的股票（触发日即大阳日），次日形态自行判断。可手动选择日期执行选股。
+        <p class="note-section-title">一、策略思路</p>
+        <p>
+          大阳回落法寻找<strong>长期低位、近期无异动</strong>的股票中，出现<strong>放量大阳线</strong>突破后、
+          次日<strong>阴线小幅回落</strong>的形态，在回落收盘价买入，利用大阳线的支撑效应获取短线收益。
+        </p>
+
+        <p class="note-section-title">二、完整操作流程</p>
+        <ol class="note-ol">
+          <li>
+            <strong>第一步：大阳线触发（Day T）—— 本页筛选的内容</strong><br/>
+            同时满足以下全部条件的股票会被列入候选：
+            <ul class="note-ul">
+              <li><strong>低位约束</strong>：当日收盘价 &le; 该股截至当日累计历史最高价的 50%</li>
+              <li><strong>近期无大涨</strong>：前 20 个交易日内无单日涨幅超过 5% 的交易日</li>
+              <li><strong>大阳线</strong>：当日涨幅 &ge; 8%（收盘较前收），且为阳线（收盘 &gt; 开盘）</li>
+              <li><strong>放量确认</strong>：当日成交量 &ge; 前一交易日成交量的 2 倍</li>
+            </ul>
+          </li>
+          <li>
+            <strong>第二步：回落买入（Day T+1）—— 需自行观察判断</strong><br/>
+            大阳线次日，观察是否满足买入条件：
+            <ul class="note-ul">
+              <li>次日收<strong>阴线</strong>（收盘 &lt; 开盘）</li>
+              <li>次日收盘价在大阳线<strong>实体上 2/3 位置之上</strong>（即回落幅度不超过阳线实体的 1/3）</li>
+              <li>满足以上条件时，以<strong>次日收盘价买入</strong></li>
+            </ul>
+          </li>
+          <li>
+            <strong>第三步：持仓与退出</strong><br/>
+            <ul class="note-ul">
+              <li><strong>止盈</strong>：持仓期间，盘中最高价触及买入价 &times; 1.10（盈利 10%），以该价格卖出</li>
+              <li><strong>止损</strong>：持仓期间，盘中最低价触及大阳线开盘价（Day T 开盘价），以该价格卖出</li>
+              <li>同日同时触及止盈止损时，<strong>止损优先</strong></li>
+            </ul>
+          </li>
+        </ol>
+
+        <p class="note-section-title">三、本页说明</p>
+        <p>
+          本页<strong>仅执行第一步</strong>：扫描全 A 股日线数据（剔除 ST/*ST），列出当日满足大阳线触发条件的候选股票。
+          第二步的回落买入确认和第三步的止盈止损操作需要自行在次日及后续交易日中观察执行。
+          可手动选择历史日期重新执行选股。
+        </p>
+        <p class="note-disclaimer">本策略仅供学习研究，不构成投资建议。</p>
       </div>
     </el-card>
 
@@ -354,7 +397,40 @@ onMounted(() => {
 }
 .note {
   color: #3b4a5a;
-  line-height: 1.6;
+  line-height: 1.8;
+  font-size: 13.5px;
+}
+.note p {
+  margin: 0 0 8px;
+}
+.note-section-title {
+  font-weight: 600;
+  color: #1e3a5f;
+  margin-top: 14px !important;
+  margin-bottom: 6px !important;
+}
+.note-section-title:first-child {
+  margin-top: 0 !important;
+}
+.note-ol {
+  margin: 6px 0 10px 0;
+  padding-left: 20px;
+}
+.note-ol > li {
+  margin-bottom: 10px;
+}
+.note-ul {
+  margin: 4px 0 2px 0;
+  padding-left: 18px;
+  list-style: disc;
+}
+.note-ul > li {
+  margin-bottom: 3px;
+}
+.note-disclaimer {
+  color: #8a98a8;
+  font-size: 12.5px;
+  margin-top: 10px !important;
 }
 .meta {
   display: grid;

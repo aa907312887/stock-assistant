@@ -20,6 +20,7 @@
             <template #title>股票信息</template>
             <el-menu-item index="/market-temperature">大盘温度</el-menu-item>
             <el-menu-item index="/stock-screening">综合选股</el-menu-item>
+            <el-menu-item index="/fundamental-analysis">基本面分析</el-menu-item>
             <el-menu-item index="/stock-basic">股票基本信息</el-menu-item>
             <el-menu-item index="/sync-jobs">同步批次</el-menu-item>
             <el-menu-item index="/sync-tasks">同步子任务</el-menu-item>
@@ -35,6 +36,7 @@
             <el-menu-item index="/strategy/bottom-consolidation-breakout">底部盘整突破</el-menu-item>
             <el-menu-item index="/strategy/ma-golden-cross">均线金叉</el-menu-item>
             <el-menu-item index="/strategy/da-yang-hui-luo">大阳回落法</el-menu-item>
+            <el-menu-item index="/strategy/zao-chen-shi-zi-xing">早晨十字星</el-menu-item>
           </el-sub-menu>
           <el-sub-menu index="backtest">
             <template #title>智能回测</template>

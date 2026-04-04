@@ -447,6 +447,7 @@ def _row_to_item_daily(
         "turnover_rate": quote.turnover_rate,
         "pe": quote.pe,
         "pe_ttm": quote.pe_ttm,
+        "pe_percentile": quote.pe_percentile,
         "pb": quote.pb,
         "dv_ratio": quote.dv_ratio,
         "report_date": report.report_date if report else None,
@@ -454,6 +455,10 @@ def _row_to_item_daily(
         "net_profit": report.net_profit if report else None,
         "eps": report.eps if report else None,
         "gross_profit_margin": report.gross_margin if report else None,
+        "roe": report.roe if report else None,
+        "bps": report.bps if report else None,
+        "net_margin": report.net_margin if report else None,
+        "debt_to_assets": report.debt_to_assets if report else None,
         "updated_at": quote.updated_at,
     }
 
@@ -493,6 +498,7 @@ def _row_to_item_weekly_monthly(
         "turnover_rate": None,
         "pe": None,
         "pe_ttm": None,
+        "pe_percentile": None,
         "pb": None,
         "dv_ratio": None,
         "report_date": report.report_date if report else None,
@@ -500,5 +506,9 @@ def _row_to_item_weekly_monthly(
         "net_profit": report.net_profit if report else None,
         "eps": report.eps if report else None,
         "gross_profit_margin": report.gross_margin if report else None,
+        "roe": report.roe if report else None,
+        "bps": report.bps if report else None,
+        "net_margin": report.net_margin if report else None,
+        "debt_to_assets": report.debt_to_assets if report else None,
         "updated_at": quote.updated_at,
     }

@@ -29,6 +29,7 @@ export interface ScreeningItem {
   turnover_rate: number | null
   pe: number | null
   pe_ttm: number | null
+  pe_percentile: number | null
   pb: number | null
   dv_ratio: number | null
   report_date: string | null
@@ -36,6 +37,10 @@ export interface ScreeningItem {
   net_profit: number | null
   eps: number | null
   gross_profit_margin: number | null
+  roe: number | null
+  bps: number | null
+  net_margin: number | null
+  debt_to_assets: number | null
   updated_at: string | null
 }
 

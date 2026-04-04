@@ -15,6 +15,7 @@ from app.services.stock_monthly_bar_sync_service import sync_monthly_bars_batch
 from app.services.stock_weekly_bar_sync_service import sync_weekly_bars_batch
 from app.services.stock_indicator_fill_service import fill_after_sync
 from app.services.stock_sync_utils import get_month_last_open_date, get_week_last_open_date
+from app.services.stock_financial_sync_service import sync_financial_reports
 from app.services.stock_sync_orchestrator import _build_error_message
 from app.services.market_temperature.temperature_job_service import run_incremental_temperature_job
 
@@ -35,7 +36,7 @@ def _fill_indicators_safe(
         logger.exception("指标填充失败（子任务已成功）timeframe=%s anchor=%s", timeframe, anchor_date)
 
 # 定时自动任务类型顺序（不声明强依赖，但基础信息优先有利于后续模块）
-AUTO_TASK_TYPES: list[str] = ["basic", "daily", "weekly", "monthly"]
+AUTO_TASK_TYPES: list[str] = ["basic", "daily", "weekly", "monthly", "financial"]
 
 
 def ensure_auto_tasks_for_trade_date(db: Session, trade_date: date) -> None:
@@ -244,6 +245,7 @@ def _rows_from_result(task_type: str, result: dict[str, int]) -> int:
         "daily": "daily_rows",
         "weekly": "weekly_rows",
         "monthly": "monthly_rows",
+        "financial": "report_rows",
     }
     key = key_map.get(task_type)
     if key and key in result:
@@ -257,6 +259,7 @@ def _merge_stats(stats: dict[str, int], task_type: str, rows: int) -> None:
         "daily": "daily_rows",
         "weekly": "weekly_rows",
         "monthly": "monthly_rows",
+        "financial": "report_rows",
     }
     k = key_map.get(task_type)
     if k:

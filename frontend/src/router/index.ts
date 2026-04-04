@@ -22,6 +22,11 @@ const router = createRouter({
           component: () => import('@/views/MarketTemperatureView.vue'),
         },
         { path: 'stock-screening', name: 'stock-screening', component: () => import('@/views/StockScreeningView.vue') },
+        {
+          path: 'fundamental-analysis',
+          name: 'fundamental-analysis',
+          component: () => import('@/views/FundamentalAnalysisView.vue'),
+        },
         { path: 'stock-basic', name: 'stock-basic', component: () => import('@/views/StockBasicView.vue') },
         { path: 'sync-jobs', name: 'sync-jobs', component: () => import('@/views/SyncJobMonitorView.vue') },
         { path: 'sync-tasks', name: 'sync-tasks', component: () => import('@/views/SyncTaskListView.vue') },
@@ -54,6 +59,11 @@ const router = createRouter({
           path: 'strategy/da-yang-hui-luo',
           name: 'strategy-da-yang-hui-luo',
           component: () => import('@/views/DaYangHuiLuoView.vue'),
+        },
+        {
+          path: 'strategy/zao-chen-shi-zi-xing',
+          name: 'strategy-zao-chen-shi-zi-xing',
+          component: () => import('@/views/ZaoChenShiZiXingView.vue'),
         },
         {
           path: 'backtest/history',

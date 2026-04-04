@@ -45,6 +45,8 @@ class StockDailyBar(Base):
     # 截至该交易日（含）的扩展最高/最低：回测须用当日行，禁止用「全表终态」冒充历史时点
     cum_hist_high: Mapped[Decimal | None] = mapped_column(Numeric(12, 4), nullable=True)
     cum_hist_low: Mapped[Decimal | None] = mapped_column(Numeric(12, 4), nullable=True)
+    # PE 在该股自 2019 年以来历史中的 min-max 百分位 [0, 100]
+    pe_percentile: Mapped[Decimal | None] = mapped_column(Numeric(6, 2), nullable=True)
     data_source: Mapped[str] = mapped_column(String(32), nullable=False, server_default="tushare")
     sync_batch_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     synced_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())

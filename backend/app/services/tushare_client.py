@@ -567,6 +567,44 @@ def get_fin_income(
     raise TushareClientError(f"Tushare income 失败: {last_err}") from last_err
 
 
+# fina_indicator 只拉取所需字段，避免 100+ 列全量拉取
+_FINA_INDICATOR_FIELDS = (
+    "ts_code,ann_date,end_date,roe,roe_dt,roe_waa,roa,"
+    "debt_to_assets,current_ratio,quick_ratio,"
+    "grossprofit_margin,netprofit_margin,bps,cfps,ebit,ocf_to_profit"
+)
+
+
+def get_fina_indicator(
+    ts_code: str,
+    *,
+    start: str | None = None,
+    end: str | None = None,
+) -> list[dict[str, Any]]:
+    """
+    财务指标（按报告期区间筛选）。返回行中含 roe、debt_to_assets 等预计算指标。
+    start/end 为 YYYYMMDD，对应 Tushare fina_indicator 的报告期区间。
+    """
+    pro = _get_pro()
+    last_err: Exception | None = None
+    for attempt in range(MAX_RETRIES):
+        try:
+            _rate_pause()
+            df = pro.fina_indicator(
+                ts_code=ts_code,
+                start_date=start or "20000101",
+                end_date=end or "20991231",
+                fields=_FINA_INDICATOR_FIELDS,
+            )
+            return _df_to_records(df)
+        except Exception as e:
+            last_err = e
+            logger.warning("Tushare fina_indicator 失败 attempt=%s code=%s error=%s", attempt + 1, ts_code, e)
+            if attempt < MAX_RETRIES - 1:
+                time.sleep(RETRY_INTERVAL_SEC)
+    raise TushareClientError(f"Tushare fina_indicator 失败: {last_err}") from last_err
+
+
 def get_open_trade_dates(*, start: str, end: str, exchange: str = "SSE") -> list[date]:
     """返回指定区间内的开市日期列表。"""
     pro = _get_pro()

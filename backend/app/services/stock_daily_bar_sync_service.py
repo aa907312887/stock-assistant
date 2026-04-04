@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from app.models import StockDailyBar
 from app.services.stock_hist_extrema_service import apply_cum_extrema_after_daily_upsert
+from app.services.stock_pe_percentile_service import apply_pe_percentile_after_daily_upsert
 from app.services.stock_sync_utils import safe_decimal
 from app.services.tushare_client import (
     TushareClientError,
@@ -169,6 +170,7 @@ def sync_daily_bars(
             written += 1
             db.flush()
             apply_cum_extrema_after_daily_upsert(db, code, trade_date)
+            apply_pe_percentile_after_daily_upsert(db, code, trade_date)
         if idx == 1 or idx == n or idx % DAILY_QFQ_PROGRESS_EVERY == 0:
             logger.info(
                 "日线前复权进度 %s/%s trade_date=%s 已写入=%s",
@@ -282,6 +284,7 @@ def sync_daily_bars_backfill_range(
                     total_written += 1
                     db.flush()
                     apply_cum_extrema_after_daily_upsert(db, code, td)
+                    apply_pe_percentile_after_daily_upsert(db, code, td)
 
             db.commit()
             db.expire_all()

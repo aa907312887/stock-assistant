@@ -51,6 +51,7 @@ class ScreeningItem(BaseModel):
     turnover_rate: Decimal | None = None
     pe: Decimal | None = None
     pe_ttm: Decimal | None = None
+    pe_percentile: Decimal | None = None
     pb: Decimal | None = None
     dv_ratio: Decimal | None = None
     report_date: dt_date | None = None
@@ -58,6 +59,10 @@ class ScreeningItem(BaseModel):
     net_profit: Decimal | None = None
     eps: Decimal | None = None
     gross_profit_margin: Decimal | None = None
+    roe: Decimal | None = None
+    bps: Decimal | None = None
+    net_margin: Decimal | None = None
+    debt_to_assets: Decimal | None = None
     updated_at: datetime | None = None
 
     model_config = {"from_attributes": True}
