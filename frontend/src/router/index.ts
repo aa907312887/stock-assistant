@@ -41,6 +41,21 @@ const router = createRouter({
           component: () => import('@/views/PanicPullbackView.vue'),
         },
         {
+          path: 'strategy/bottom-consolidation-breakout',
+          name: 'strategy-bottom-consolidation-breakout',
+          component: () => import('@/views/BottomConsolidationBreakoutView.vue'),
+        },
+        {
+          path: 'strategy/ma-golden-cross',
+          name: 'strategy-ma-golden-cross',
+          component: () => import('@/views/MAGoldenCrossView.vue'),
+        },
+        {
+          path: 'strategy/da-yang-hui-luo',
+          name: 'strategy-da-yang-hui-luo',
+          component: () => import('@/views/DaYangHuiLuoView.vue'),
+        },
+        {
           path: 'backtest/history',
           name: 'backtest-history',
           component: () => import('@/views/HistoryBacktestView.vue'),

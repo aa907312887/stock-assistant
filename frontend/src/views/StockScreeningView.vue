@@ -69,7 +69,25 @@
         border
         style="width: 100%"
       >
-        <el-table-column prop="code" label="代码" width="110" />
+        <el-table-column width="110">
+          <template #header>
+            <span>代码</span>
+            <el-tooltip content="点击在东方财富打开该股行情（新标签页）" placement="top">
+              <el-icon class="hint-icon-sm"><QuestionFilled /></el-icon>
+            </el-tooltip>
+          </template>
+          <template #default="{ row }">
+            <a
+              v-if="eastMoneyUrl(row)"
+              class="code-link"
+              :href="eastMoneyUrl(row)!"
+              target="_blank"
+              rel="noopener noreferrer"
+              @click.stop
+            >{{ row.code }}</a>
+            <span v-else>{{ row.code }}</span>
+          </template>
+        </el-table-column>
         <el-table-column prop="name" label="名称" width="100" />
         <el-table-column prop="trade_date" :label="dateColumnLabel" width="120" />
         <el-table-column prop="open" label="开盘价" width="90" align="right">
@@ -197,7 +215,9 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref, computed } from 'vue'
 import { ElMessage } from 'element-plus'
+import { QuestionFilled } from '@element-plus/icons-vue'
 import { getScreening, getLatestDate, type ScreeningItem, type ScreeningTimeframe } from '@/api/stock'
+import { eastMoneyQuoteUrl } from '@/utils/eastMoneyQuoteUrl'
 
 const loading = ref(false)
 const timeframe = ref<ScreeningTimeframe>('daily')
@@ -305,6 +325,10 @@ function handleReset() {
   fetchList()
 }
 
+function eastMoneyUrl(row: ScreeningItem): string | null {
+  return eastMoneyQuoteUrl(row.code, row.exchange)
+}
+
 onMounted(() => {
   fetchLatestDate()
   fetchList()
@@ -374,5 +398,19 @@ onMounted(() => {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+}
+.code-link {
+  color: var(--el-color-primary);
+  text-decoration: none;
+}
+.code-link:hover {
+  text-decoration: underline;
+}
+.hint-icon-sm {
+  margin-left: 4px;
+  font-size: 12px;
+  color: var(--el-color-info);
+  cursor: help;
+  vertical-align: middle;
 }
 </style>

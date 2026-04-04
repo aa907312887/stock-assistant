@@ -32,6 +32,9 @@
             <template #title>策略选股</template>
             <el-menu-item index="/strategy/chong-gao-hui-luo">冲高回落战法</el-menu-item>
             <el-menu-item index="/strategy/panic-pullback">恐慌回落战法</el-menu-item>
+            <el-menu-item index="/strategy/bottom-consolidation-breakout">底部盘整突破</el-menu-item>
+            <el-menu-item index="/strategy/ma-golden-cross">均线金叉</el-menu-item>
+            <el-menu-item index="/strategy/da-yang-hui-luo">大阳回落法</el-menu-item>
           </el-sub-menu>
           <el-sub-menu index="backtest">
             <template #title>智能回测</template>
