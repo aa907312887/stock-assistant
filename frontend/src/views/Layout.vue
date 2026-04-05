@@ -37,10 +37,12 @@
             <el-menu-item index="/strategy/ma-golden-cross">均线金叉</el-menu-item>
             <el-menu-item index="/strategy/da-yang-hui-luo">大阳回落法</el-menu-item>
             <el-menu-item index="/strategy/zao-chen-shi-zi-xing">早晨十字星</el-menu-item>
+            <el-menu-item index="/strategy/pe-value-investment">市盈率长线价值</el-menu-item>
           </el-sub-menu>
           <el-sub-menu index="backtest">
             <template #title>智能回测</template>
             <el-menu-item index="/backtest/history">历史回测</el-menu-item>
+            <el-menu-item index="/backtest/simulation">历史模拟</el-menu-item>
           </el-sub-menu>
         </el-menu>
       </el-aside>

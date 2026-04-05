@@ -89,4 +89,20 @@ big_rise_pct=0.10, pullback_pct=0.03, lookback_trading_days=10""",
 
 【关键参数】
 gap_down_threshold=0.03, day_drop_threshold=0.07, volume_k=1.5, lookback_days=5""",
+    "pe_value_investment": """【买入条件】
+- 排除ST/*ST股票和北交所
+- PE历史百分位 < 10（该股自2019年以来的PE最大最小值计算）
+- 最近一期财报ROE > 15%
+- 最近一期财报资产负债率 < 80%
+- 以当日收盘价买入
+
+【卖出条件】
+- PE历史百分位 >= 30 时以当日收盘价卖出
+
+【特殊说明】
+- 可同时持有多只股票，每只独立跟踪
+- 同一股票卖出后可在后续重新买入
+
+【关键参数】
+pe_buy_threshold=10, pe_sell_threshold=30, roe_min=15, debt_to_assets_max=80""",
 }

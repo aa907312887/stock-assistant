@@ -20,6 +20,8 @@ from app.models.strategy_selection_item import StrategySelectionItem
 from app.models.strategy_signal_event import StrategySignalEvent
 from app.models.backtest_task import BacktestTask
 from app.models.backtest_trade import BacktestTrade
+from app.models.simulation_task import SimulationTask
+from app.models.simulation_trade import SimulationTrade
 
 __all__ = [
     "User",
@@ -44,4 +46,6 @@ __all__ = [
     "StrategySignalEvent",
     "BacktestTask",
     "BacktestTrade",
+    "SimulationTask",
+    "SimulationTrade",
 ]

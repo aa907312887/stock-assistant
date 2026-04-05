@@ -66,9 +66,19 @@ const router = createRouter({
           component: () => import('@/views/ZaoChenShiZiXingView.vue'),
         },
         {
+          path: 'strategy/pe-value-investment',
+          name: 'strategy-pe-value-investment',
+          component: () => import('@/views/PeValueInvestmentView.vue'),
+        },
+        {
           path: 'backtest/history',
           name: 'backtest-history',
           component: () => import('@/views/HistoryBacktestView.vue'),
+        },
+        {
+          path: 'backtest/simulation',
+          name: 'backtest-simulation',
+          component: () => import('@/views/HistorySimulationView.vue'),
         },
       ],
     },

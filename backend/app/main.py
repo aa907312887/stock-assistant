@@ -16,6 +16,7 @@ from app.api.portfolio import router as portfolio_router
 from app.api.market_temperature import router as market_temperature_router
 from app.api.strategies import router as strategies_router
 from app.api.backtest import router as backtest_router
+from app.api.simulation import router as simulation_router
 from app.api.fundamental import router as fundamental_router
 from app.core.scheduler import shutdown_scheduler, start_scheduler
 
@@ -79,6 +80,7 @@ app.include_router(portfolio_router, prefix="/api")
 app.include_router(market_temperature_router, prefix="/api")
 app.include_router(strategies_router, prefix="/api")
 app.include_router(backtest_router, prefix="/api")
+app.include_router(simulation_router, prefix="/api")
 app.include_router(fundamental_router, prefix="/api")
 
 

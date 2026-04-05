@@ -1,0 +1,33 @@
+"""历史模拟交易明细表 simulation_trade。"""
+
+from datetime import date, datetime
+from decimal import Decimal
+
+from sqlalchemy import BigInteger, Date, DateTime, Index, JSON, Numeric, String, func
+from sqlalchemy.orm import Mapped, mapped_column
+
+from app.database import Base
+
+
+class SimulationTrade(Base):
+    __tablename__ = "simulation_trade"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    task_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    stock_code: Mapped[str] = mapped_column(String(20), nullable=False)
+    stock_name: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    buy_date: Mapped[date] = mapped_column(Date, nullable=False)
+    buy_price: Mapped[Decimal] = mapped_column(Numeric(12, 4), nullable=False)
+    sell_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    sell_price: Mapped[Decimal | None] = mapped_column(Numeric(12, 4), nullable=True)
+    return_rate: Mapped[Decimal | None] = mapped_column(Numeric(12, 4), nullable=True)
+    trade_type: Mapped[str] = mapped_column(String(16), nullable=False, server_default="closed")
+    exchange: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    market: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    extra_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
+
+    __table_args__ = (
+        Index("idx_sim_trade_task", "task_id"),
+        Index("idx_sim_trade_stock", "stock_code", "buy_date"),
+    )
