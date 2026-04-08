@@ -28,6 +28,7 @@ def get_screening(
     macd_red: bool | None = Query(None, description="是否 MACD 红柱（柱>0）"),
     ma_cross: bool | None = Query(None, description="是否 MA5 上穿 MA10（相对上一根同周期 K）"),
     macd_cross: bool | None = Query(None, description="是否 MACD 金叉 DIF 上穿 DEA（相对上一根）"),
+    pe_percentile_order: Literal["asc", "desc"] | None = Query(None, description="PE百分位排序：asc=从小到大，desc=从大到小"),
     timeframe: ScreeningTimeframe = Query("daily", description="日K / 周K / 月K"),
     data_date: date | None = Query(None),
     db=Depends(get_db),
@@ -45,6 +46,7 @@ def get_screening(
             macd_red=macd_red,
             ma_cross=ma_cross,
             macd_cross=macd_cross,
+            pe_percentile_order=pe_percentile_order,
             data_date=data_date,
         )
         return ScreeningResponse(

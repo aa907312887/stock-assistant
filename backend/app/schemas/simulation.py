@@ -6,6 +6,13 @@ from datetime import date, datetime
 
 from pydantic import BaseModel, Field
 
+from app.schemas.backtest import (
+    BacktestFilteredReportResponse,
+    BacktestYearlyAnalysisResponse,
+    DimensionStat,
+    TempLevelStat,
+)
+
 
 class RunSimulationRequest(BaseModel):
     strategy_id: str
@@ -53,6 +60,9 @@ class SimulationReport(BaseModel):
     unclosed_count: int
     skipped_count: int
     conclusion: str
+    temp_level_stats: list[TempLevelStat] = Field(default_factory=list)
+    exchange_stats: list[DimensionStat] = Field(default_factory=list)
+    market_stats: list[DimensionStat] = Field(default_factory=list)
 
 
 class SimulationTaskDetailResponse(BaseModel):
@@ -82,6 +92,8 @@ class SimulationTradeItem(BaseModel):
     trade_type: str
     exchange: str | None = None
     market: str | None = None
+    market_temp_score: float | None = None
+    market_temp_level: str | None = None
     extra: dict | None = None
 
 

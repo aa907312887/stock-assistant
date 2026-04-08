@@ -2,7 +2,6 @@
 
 与回测引擎 (backtest_engine) 的区别：
 - 不做单仓位资金仿真（无 position_amount / reserve_amount）
-- 不补充大盘温度数据
 - 不产生 not_traded 类型交易
 - 存储到独立的 simulation_task / simulation_trade 表
 """
@@ -11,14 +10,22 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime
+from decimal import Decimal
 
 from sqlalchemy.orm import Session
 
 from app.models.simulation_task import SimulationTask
 from app.models.simulation_trade import SimulationTrade as SimulationTradeModel
-from app.services.backtest.backtest_engine import enrich_trades_with_stock_dimension
+from app.services.backtest.backtest_engine import (
+    enrich_trades_with_stock_dimension,
+    enrich_trades_with_temperature,
+)
+from app.services.backtest.backtest_report import (
+    calculate_exchange_stats,
+    calculate_market_stats,
+    calculate_temp_level_stats,
+)
 from app.services.strategy.registry import get_strategy
-from app.services.strategy.strategy_base import BacktestTrade
 from app.services.strategy.strategy_descriptions import STRATEGY_DESCRIPTIONS
 
 logger = logging.getLogger(__name__)
@@ -46,8 +53,9 @@ def run_simulation(
 
         result = strategy.backtest(start_date=start_date, end_date=end_date)
 
-        # 补充交易所/板块维度（复用回测引擎的方法）
-        enriched_trades = enrich_trades_with_stock_dimension(db, result.trades)
+        # 与回测一致：先补大盘温度，再补交易所/板块
+        enriched_trades = enrich_trades_with_temperature(db, result.trades)
+        enriched_trades = enrich_trades_with_stock_dimension(db, enriched_trades)
 
         # 只保留 closed 和 unclosed（模拟不产生 not_traded）
         trades_to_save = [t for t in enriched_trades if t.trade_type in ("closed", "unclosed")]
@@ -57,6 +65,7 @@ def run_simulation(
 
         # 写入交易明细
         for trade in trades_to_save:
+            score = trade.market_temp_score
             db.add(SimulationTradeModel(
                 task_id=task_id,
                 stock_code=trade.stock_code,
@@ -69,6 +78,8 @@ def run_simulation(
                 trade_type=trade.trade_type,
                 exchange=trade.exchange,
                 market=trade.market,
+                market_temp_score=Decimal(str(score)) if score is not None else None,
+                market_temp_level=trade.market_temp_level,
                 extra_json=trade.extra if trade.extra else None,
             ))
 
@@ -100,6 +111,10 @@ def run_simulation(
             unclosed_count, start_date, end_date,
         )
 
+        temp_stats = calculate_temp_level_stats(trades_to_save)
+        exchange_stats = calculate_exchange_stats(trades_to_save)
+        market_stats = calculate_market_stats(trades_to_save)
+
         # 更新任务
         task.status = "completed" if unclosed_count == 0 else "incomplete"
         task.total_trades = total_trades
@@ -118,6 +133,10 @@ def run_simulation(
             "fee_model": "无手续费",
             "conclusion": conclusion,
             "skip_reasons": result.skip_reasons,
+            "portfolio_simulation_applied": False,
+            "temp_level_stats": temp_stats,
+            "exchange_stats": exchange_stats,
+            "market_stats": market_stats,
         }
         task.finished_at = datetime.now()
 

@@ -24,10 +24,13 @@ class SimulationTrade(Base):
     trade_type: Mapped[str] = mapped_column(String(16), nullable=False, server_default="closed")
     exchange: Mapped[str | None] = mapped_column(String(10), nullable=True)
     market: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    market_temp_score: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
+    market_temp_level: Mapped[str | None] = mapped_column(String(16), nullable=True)
     extra_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
 
     __table_args__ = (
         Index("idx_sim_trade_task", "task_id"),
         Index("idx_sim_trade_stock", "stock_code", "buy_date"),
+        Index("idx_sim_trade_temp", "task_id", "market_temp_level"),
     )

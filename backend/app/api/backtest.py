@@ -6,12 +6,11 @@ import logging
 import math
 import threading
 import uuid
-from collections import defaultdict
 from datetime import date, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import JSONResponse
-from sqlalchemy import func, or_
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.database import SessionLocal, get_db
@@ -25,7 +24,6 @@ from app.schemas.backtest import (
     BacktestFilteredReportResponse,
     BacktestReport,
     BacktestYearlyAnalysisResponse,
-    BacktestYearlyStatItem,
     DimensionStat,
     BacktestTaskDetailResponse,
     BacktestTaskItem,
@@ -42,6 +40,11 @@ from app.schemas.backtest import (
 )
 from app.services.backtest.backtest_engine import run_backtest
 from app.services.strategy.registry import get_strategy
+from app.services.trade_query_metrics import (
+    apply_trade_dimension_filters,
+    calculate_metrics_from_trade_rows,
+    yearly_aggregate_from_rows,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -99,89 +102,6 @@ def _compute_user_decision_stats(db: Session, task_id: str) -> UserDecisionTaskS
         excellent_count=excellent_count,
         wrong_count=wrong_count,
         correctness_rate=correctness_rate,
-    )
-
-
-def _apply_trade_filters(
-    query,
-    *,
-    trade_type: str | None,
-    market_temp_levels: list[str],
-    markets: list[str],
-    exchanges: list[str],
-    buy_year: int | None = None,
-):
-    """在交易查询上统一应用筛选条件（支持多选交叉）。"""
-    empty_token = "__EMPTY__"
-
-    if buy_year is not None:
-        query = query.filter(
-            BacktestTradeModel.buy_date >= date(buy_year, 1, 1),
-            BacktestTradeModel.buy_date <= date(buy_year, 12, 31),
-        )
-
-    if trade_type:
-        query = query.filter(BacktestTradeModel.trade_type == trade_type)
-    if market_temp_levels:
-        query = query.filter(BacktestTradeModel.market_temp_level.in_(market_temp_levels))
-    if markets:
-        has_empty = empty_token in markets
-        normal_markets = [m for m in markets if m != empty_token]
-        if has_empty and normal_markets:
-            query = query.filter(
-                or_(
-                    BacktestTradeModel.market.in_(normal_markets),
-                    BacktestTradeModel.market.is_(None),
-                    BacktestTradeModel.market == "",
-                )
-            )
-        elif has_empty:
-            query = query.filter(
-                or_(
-                    BacktestTradeModel.market.is_(None),
-                    BacktestTradeModel.market == "",
-                )
-            )
-        else:
-            query = query.filter(BacktestTradeModel.market.in_(normal_markets))
-    if exchanges:
-        query = query.filter(BacktestTradeModel.exchange.in_(exchanges))
-    return query
-
-
-def _calculate_metrics_from_rows(rows: list[BacktestTradeModel]) -> BacktestFilteredMetrics:
-    matched_count = len(rows)
-    closed = [r for r in rows if r.trade_type == "closed" and r.return_rate is not None]
-    unclosed_count = len([r for r in rows if r.trade_type == "unclosed"])
-    returns = [float(r.return_rate) for r in closed]
-    if not closed:
-        return BacktestFilteredMetrics(
-            total_trades=0,
-            win_trades=0,
-            lose_trades=0,
-            win_rate=0.0,
-            total_return=0.0,
-            avg_return=0.0,
-            max_win=0.0,
-            max_loss=0.0,
-            unclosed_count=unclosed_count,
-            matched_count=matched_count,
-        )
-
-    win_trades = len([x for x in returns if x > 0])
-    lose_trades = len(returns) - win_trades
-    total_trades = len(returns)
-    return BacktestFilteredMetrics(
-        total_trades=total_trades,
-        win_trades=win_trades,
-        lose_trades=lose_trades,
-        win_rate=win_trades / total_trades,
-        total_return=sum(returns),
-        avg_return=sum(returns) / total_trades,
-        max_win=max(returns),
-        max_loss=min(returns),
-        unclosed_count=unclosed_count,
-        matched_count=matched_count,
     )
 
 
@@ -431,8 +351,9 @@ def api_get_backtest_trades(
     selected_exchanges = _split_csv_param(exchanges) or _split_csv_param(exchange)
 
     query = db.query(BacktestTradeModel).filter(BacktestTradeModel.task_id == task_id)
-    query = _apply_trade_filters(
+    query = apply_trade_dimension_filters(
         query,
+        BacktestTradeModel,
         trade_type=trade_type,
         market_temp_levels=selected_temp_levels,
         markets=selected_markets,
@@ -475,8 +396,9 @@ def api_get_filtered_report(
     selected_exchanges = _split_csv_param(exchanges)
 
     query = db.query(BacktestTradeModel).filter(BacktestTradeModel.task_id == task_id)
-    query = _apply_trade_filters(
+    query = apply_trade_dimension_filters(
         query,
+        BacktestTradeModel,
         trade_type=trade_type,
         market_temp_levels=selected_temp_levels,
         markets=selected_markets,
@@ -484,7 +406,7 @@ def api_get_filtered_report(
         buy_year=year,
     )
     rows = query.all()
-    metrics = _calculate_metrics_from_rows(rows)
+    metrics = calculate_metrics_from_trade_rows(rows)
 
     return BacktestFilteredReportResponse(
         task_id=task_id,
@@ -525,8 +447,9 @@ def api_get_yearly_analysis(
     selected_exchanges = _split_csv_param(exchanges)
 
     query = db.query(BacktestTradeModel).filter(BacktestTradeModel.task_id == task_id)
-    query = _apply_trade_filters(
+    query = apply_trade_dimension_filters(
         query,
+        BacktestTradeModel,
         trade_type=trade_type,
         market_temp_levels=selected_temp_levels,
         markets=selected_markets,
@@ -535,25 +458,7 @@ def api_get_yearly_analysis(
     )
     rows = query.order_by(BacktestTradeModel.buy_date).all()
 
-    by_year: dict[int, list] = defaultdict(list)
-    for r in rows:
-        by_year[r.buy_date.year].append(r)
-
-    items: list[BacktestYearlyStatItem] = []
-    for y in sorted(by_year.keys()):
-        m = _calculate_metrics_from_rows(by_year[y])
-        items.append(
-            BacktestYearlyStatItem(
-                year=y,
-                matched_count=m.matched_count,
-                total_trades=m.total_trades,
-                win_trades=m.win_trades,
-                lose_trades=m.lose_trades,
-                win_rate=m.win_rate,
-                total_return=m.total_return,
-                avg_return=m.avg_return,
-            )
-        )
+    items = yearly_aggregate_from_rows(rows)
 
     return BacktestYearlyAnalysisResponse(
         task_id=task_id,
@@ -582,7 +487,7 @@ def api_get_best_options(task_id: str, db: Session = Depends(get_db)):
 
     all_rows = db.query(BacktestTradeModel).filter(BacktestTradeModel.task_id == task_id).all()
     if not all_rows:
-        empty_metrics = _calculate_metrics_from_rows([])
+        empty_metrics = calculate_metrics_from_trade_rows([])
         empty_item = BacktestBestOptionItem(
             filters={"market_temp_levels": [], "markets": [], "exchanges": []},
             metrics=empty_metrics,
@@ -629,7 +534,7 @@ def api_get_best_options(task_id: str, db: Session = Depends(get_db)):
                     else:
                         filtered = [r for r in filtered if r.market == m]
 
-                metrics = _calculate_metrics_from_rows(filtered)
+                metrics = calculate_metrics_from_trade_rows(filtered)
                 if metrics.total_trades <= 0:
                     continue
 
@@ -680,7 +585,7 @@ def api_get_best_options(task_id: str, db: Session = Depends(get_db)):
                         best_profit_filters = filters
 
     if best_profit_metrics is None:
-        empty_metrics = _calculate_metrics_from_rows([])
+        empty_metrics = calculate_metrics_from_trade_rows([])
         empty_item = BacktestBestOptionItem(
             filters={"market_temp_levels": [], "markets": [], "exchanges": []},
             metrics=empty_metrics,
@@ -693,7 +598,7 @@ def api_get_best_options(task_id: str, db: Session = Depends(get_db)):
 
     # 若没有任何组合满足“最佳胜率最小样本约束”，回退为“全量不过滤”结果
     if best_win_metrics is None:
-        fallback_metrics = _calculate_metrics_from_rows(all_rows)
+        fallback_metrics = calculate_metrics_from_trade_rows(all_rows)
         best_win_metrics = fallback_metrics
         best_win_filters = {"market_temp_levels": [], "markets": [], "exchanges": []}
 

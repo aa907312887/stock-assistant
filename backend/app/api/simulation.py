@@ -9,14 +9,17 @@ from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import JSONResponse
-from sqlalchemy import func, or_
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.database import SessionLocal, get_db
 from app.models.simulation_task import SimulationTask
 from app.models.simulation_trade import SimulationTrade as SimulationTradeModel
 from app.models.stock_daily_bar import StockDailyBar
+from app.schemas.backtest import DimensionStat, TempLevelStat
 from app.schemas.simulation import (
+    BacktestFilteredReportResponse,
+    BacktestYearlyAnalysisResponse,
     RunSimulationRequest,
     RunSimulationResponse,
     SimulationReport,
@@ -28,6 +31,11 @@ from app.schemas.simulation import (
 )
 from app.services.backtest.simulation_engine import run_simulation
 from app.services.strategy.registry import get_strategy
+from app.services.trade_query_metrics import (
+    apply_trade_dimension_filters,
+    calculate_metrics_from_trade_rows,
+    yearly_aggregate_from_rows,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -58,8 +66,36 @@ def _row_to_trade_item(r: SimulationTradeModel) -> SimulationTradeItem:
         trade_type=r.trade_type,
         exchange=r.exchange,
         market=r.market,
+        market_temp_score=float(r.market_temp_score) if r.market_temp_score is not None else None,
+        market_temp_level=r.market_temp_level,
         extra=r.extra_json,
     )
+
+
+def _parse_temp_level_stats(raw: object) -> list[TempLevelStat]:
+    if not isinstance(raw, list):
+        return []
+    out: list[TempLevelStat] = []
+    for x in raw:
+        if isinstance(x, dict):
+            try:
+                out.append(TempLevelStat.model_validate(x))
+            except Exception:
+                continue
+    return out
+
+
+def _parse_dimension_stats(raw: object) -> list[DimensionStat]:
+    if not isinstance(raw, list):
+        return []
+    out: list[DimensionStat] = []
+    for x in raw:
+        if isinstance(x, dict):
+            try:
+                out.append(DimensionStat.model_validate(x))
+            except Exception:
+                continue
+    return out
 
 
 @router.post("/run")
@@ -190,11 +226,18 @@ def api_get_simulation_task(task_id: str, db: Session = Depends(get_db)):
             unclosed_count=task.unclosed_count,
             skipped_count=task.skipped_count,
             conclusion=conclusion,
+            temp_level_stats=_parse_temp_level_stats(assumptions_json.get("temp_level_stats")),
+            exchange_stats=_parse_dimension_stats(assumptions_json.get("exchange_stats")),
+            market_stats=_parse_dimension_stats(assumptions_json.get("market_stats")),
         )
-        assumptions = {
-            k: v for k, v in assumptions_json.items()
-            if k not in ("conclusion", "skip_reasons")
+        _omit_assumptions = {
+            "conclusion",
+            "skip_reasons",
+            "temp_level_stats",
+            "exchange_stats",
+            "market_stats",
         }
+        assumptions = {k: v for k, v in assumptions_json.items() if k not in _omit_assumptions}
 
     return SimulationTaskDetailResponse(
         task_id=task.task_id,
@@ -216,8 +259,13 @@ def api_get_simulation_task(task_id: str, db: Session = Depends(get_db)):
 def api_get_simulation_trades(
     task_id: str,
     trade_type: str | None = Query(default=None, description="closed=已平仓；unclosed=未平仓"),
-    exchanges: str | None = Query(default=None, description="多选交易所，逗号分隔"),
+    market_temp_level: str | None = Query(default=None, description="兼容旧参数：单个温度级别"),
+    market: str | None = Query(default=None, description="兼容旧参数：单个板块"),
+    exchange: str | None = Query(default=None, description="兼容旧参数：单个交易所"),
+    market_temp_levels: str | None = Query(default=None, description="多选温度级别，逗号分隔"),
     markets: str | None = Query(default=None, description="多选板块，逗号分隔"),
+    exchanges: str | None = Query(default=None, description="多选交易所，逗号分隔"),
+    year: int | None = Query(default=None, ge=1990, le=2100, description="按买入日自然年筛选"),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=50, ge=1, le=200),
     db: Session = Depends(get_db),
@@ -226,40 +274,118 @@ def api_get_simulation_trades(
     if task is None:
         raise HTTPException(status_code=404, detail={"code": "TASK_NOT_FOUND", "message": "模拟任务不存在"})
 
+    selected_temp_levels = _split_csv_param(market_temp_levels) or _split_csv_param(market_temp_level)
+    selected_markets = _split_csv_param(markets) or _split_csv_param(market)
+    selected_exchanges = _split_csv_param(exchanges) or _split_csv_param(exchange)
+
     query = db.query(SimulationTradeModel).filter(SimulationTradeModel.task_id == task_id)
-
-    if trade_type:
-        query = query.filter(SimulationTradeModel.trade_type == trade_type)
-
-    selected_exchanges = _split_csv_param(exchanges)
-    if selected_exchanges:
-        query = query.filter(SimulationTradeModel.exchange.in_(selected_exchanges))
-
-    selected_markets = _split_csv_param(markets)
-    empty_token = "__EMPTY__"
-    if selected_markets:
-        has_empty = empty_token in selected_markets
-        normal_markets = [m for m in selected_markets if m != empty_token]
-        if has_empty and normal_markets:
-            query = query.filter(
-                or_(
-                    SimulationTradeModel.market.in_(normal_markets),
-                    SimulationTradeModel.market.is_(None),
-                    SimulationTradeModel.market == "",
-                )
-            )
-        elif has_empty:
-            query = query.filter(
-                or_(
-                    SimulationTradeModel.market.is_(None),
-                    SimulationTradeModel.market == "",
-                )
-            )
-        else:
-            query = query.filter(SimulationTradeModel.market.in_(normal_markets))
+    query = apply_trade_dimension_filters(
+        query,
+        SimulationTradeModel,
+        trade_type=trade_type,
+        market_temp_levels=selected_temp_levels,
+        markets=selected_markets,
+        exchanges=selected_exchanges,
+        buy_year=year,
+    )
 
     total = query.count()
     records = query.order_by(SimulationTradeModel.buy_date).offset((page - 1) * page_size).limit(page_size).all()
 
     items = [_row_to_trade_item(r) for r in records]
     return SimulationTradeListResponse(total=total, page=page, page_size=page_size, items=items)
+
+
+@router.get("/tasks/{task_id}/filtered-report", response_model=BacktestFilteredReportResponse)
+def api_get_simulation_filtered_report(
+    task_id: str,
+    trade_type: str | None = Query(
+        default=None,
+        description="closed=已平仓；unclosed=未平仓；不传=不限",
+    ),
+    market_temp_levels: str | None = Query(default=None, description="多选温度级别，逗号分隔"),
+    markets: str | None = Query(default=None, description="多选板块，逗号分隔"),
+    exchanges: str | None = Query(default=None, description="多选交易所，逗号分隔"),
+    year: int | None = Query(default=None, ge=1990, le=2100, description="按买入日自然年筛选"),
+    db: Session = Depends(get_db),
+):
+    """对已落库模拟明细按条件复算指标（不重新跑策略）。"""
+    task = db.query(SimulationTask).filter(SimulationTask.task_id == task_id).first()
+    if task is None:
+        raise HTTPException(status_code=404, detail={"code": "TASK_NOT_FOUND", "message": "模拟任务不存在"})
+
+    selected_temp_levels = _split_csv_param(market_temp_levels)
+    selected_markets = _split_csv_param(markets)
+    selected_exchanges = _split_csv_param(exchanges)
+
+    query = db.query(SimulationTradeModel).filter(SimulationTradeModel.task_id == task_id)
+    query = apply_trade_dimension_filters(
+        query,
+        SimulationTradeModel,
+        trade_type=trade_type,
+        market_temp_levels=selected_temp_levels,
+        markets=selected_markets,
+        exchanges=selected_exchanges,
+        buy_year=year,
+    )
+    rows = query.all()
+    metrics = calculate_metrics_from_trade_rows(rows)
+
+    return BacktestFilteredReportResponse(
+        task_id=task_id,
+        filters={
+            "trade_type": trade_type,
+            "market_temp_levels": selected_temp_levels,
+            "markets": selected_markets,
+            "exchanges": selected_exchanges,
+            "year": year,
+        },
+        metrics=metrics,
+    )
+
+
+@router.get("/tasks/{task_id}/yearly-analysis", response_model=BacktestYearlyAnalysisResponse)
+def api_get_simulation_yearly_analysis(
+    task_id: str,
+    trade_type: str | None = Query(
+        default=None,
+        description="closed=已平仓；unclosed=未平仓；不传=不限",
+    ),
+    market_temp_levels: str | None = Query(default=None, description="多选温度级别，逗号分隔"),
+    markets: str | None = Query(default=None, description="多选板块，逗号分隔"),
+    exchanges: str | None = Query(default=None, description="多选交易所，逗号分隔"),
+    year: int | None = Query(default=None, ge=1990, le=2100, description="仅统计该买入自然年；不传则按年分列展示全部"),
+    db: Session = Depends(get_db),
+):
+    task = db.query(SimulationTask).filter(SimulationTask.task_id == task_id).first()
+    if task is None:
+        raise HTTPException(status_code=404, detail={"code": "TASK_NOT_FOUND", "message": "模拟任务不存在"})
+
+    selected_temp_levels = _split_csv_param(market_temp_levels)
+    selected_markets = _split_csv_param(markets)
+    selected_exchanges = _split_csv_param(exchanges)
+
+    query = db.query(SimulationTradeModel).filter(SimulationTradeModel.task_id == task_id)
+    query = apply_trade_dimension_filters(
+        query,
+        SimulationTradeModel,
+        trade_type=trade_type,
+        market_temp_levels=selected_temp_levels,
+        markets=selected_markets,
+        exchanges=selected_exchanges,
+        buy_year=year,
+    )
+    rows = query.order_by(SimulationTradeModel.buy_date).all()
+    items = yearly_aggregate_from_rows(rows)
+
+    return BacktestYearlyAnalysisResponse(
+        task_id=task_id,
+        filters={
+            "trade_type": trade_type,
+            "market_temp_levels": selected_temp_levels,
+            "markets": selected_markets,
+            "exchanges": selected_exchanges,
+            "year": year,
+        },
+        items=items,
+    )

@@ -73,6 +73,8 @@ export function getScreening(params: {
   ma_cross?: boolean
   /** 是否 MACD 金叉（DIF 上穿 DEA） */
   macd_cross?: boolean
+  /** PE百分位排序：asc=从小到大，desc=从大到小 */
+  pe_percentile_order?: 'asc' | 'desc'
   /** 日K / 周K / 月K，默认 daily */
   timeframe?: ScreeningTimeframe
   data_date?: string

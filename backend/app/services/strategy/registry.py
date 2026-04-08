@@ -13,6 +13,8 @@ from app.services.strategy.strategies.shu_guang_chu_xian import ShuGuangChuXianS
 from app.services.strategy.strategies.da_yang_hui_luo import DaYangHuiLuoStrategy
 from app.services.strategy.strategies.pe_value_investment import PeValueInvestmentStrategy
 from app.services.strategy.strategies.zao_chen_shi_zi_xing import ZaoChenShiZiXingStrategy
+from app.services.strategy.strategies.duo_tou_pai_lie import DuoTouPaiLieStrategy
+from app.services.strategy.strategies.pe_zao_chen_shi_zi_xing import PeZaoChenShiZiXingStrategy
 
 
 @dataclass(frozen=True)
@@ -28,10 +30,12 @@ def list_strategies() -> list[StockStrategy]:
         PanicPullbackStrategy(),
         ShuGuangChuXianStrategy(),
         ZaoChenShiZiXingStrategy(),
+        PeZaoChenShiZiXingStrategy(),
         BottomConsolidationBreakoutStrategy(),
         MAGoldenCrossStrategy(),
         DaYangHuiLuoStrategy(),
         PeValueInvestmentStrategy(),
+        DuoTouPaiLieStrategy(),
     ]
 
 

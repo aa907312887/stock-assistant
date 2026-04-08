@@ -57,6 +57,12 @@
             <el-option label="否" :value="false" />
           </el-select>
         </el-form-item>
+        <el-form-item label="PE百分位排序">
+          <el-select v-model="filters.pe_percentile_order" clearable placeholder="不限" style="width: 120px">
+            <el-option label="从小到大" value="asc" />
+            <el-option label="从大到小" value="desc" />
+          </el-select>
+        </el-form-item>
         <el-form-item>
           <el-button type="primary" @click="handleSearch">筛选</el-button>
           <el-button @click="handleReset">重置</el-button>
@@ -242,6 +248,7 @@ const filters = reactive({
   macd_red: undefined as boolean | undefined,
   ma_cross: undefined as boolean | undefined,
   macd_cross: undefined as boolean | undefined,
+  pe_percentile_order: undefined as string | undefined,
 })
 
 const dataDateLabel = computed(() => {
@@ -291,6 +298,7 @@ function buildParams() {
   if (filters.macd_red === true || filters.macd_red === false) p.macd_red = filters.macd_red
   if (filters.ma_cross === true || filters.ma_cross === false) p.ma_cross = filters.ma_cross
   if (filters.macd_cross === true || filters.macd_cross === false) p.macd_cross = filters.macd_cross
+  if (filters.pe_percentile_order) p.pe_percentile_order = filters.pe_percentile_order
   return p
 }
 
@@ -337,6 +345,7 @@ function handleReset() {
   filters.macd_red = undefined
   filters.ma_cross = undefined
   filters.macd_cross = undefined
+  filters.pe_percentile_order = undefined
   page.value = 1
   fetchList()
 }

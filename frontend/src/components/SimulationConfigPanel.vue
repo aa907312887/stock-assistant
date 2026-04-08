@@ -4,7 +4,7 @@
       <div class="card-header">
         <span class="title">模拟配置</span>
         <el-tooltip
-          content="选择策略与时间范围，发起历史模拟。系统将在后台执行，完成后可查看收益率与成功率统计。"
+          content="选择策略与时间范围，发起历史模拟。系统将在后台执行，完成后可查看收益率与成功率统计。历史模拟不进行资金/仓位仿真，统计全部符合条件的闭仓样本；与历史回测的仓位仿真相比，笔数可能更多。"
           placement="top"
         >
           <el-icon class="hint-icon"><QuestionFilled /></el-icon>

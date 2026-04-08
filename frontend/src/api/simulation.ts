@@ -1,5 +1,13 @@
 import http from './http'
 
+import type {
+  BacktestFilteredMetrics,
+  BacktestFilteredReportResponse,
+  BacktestYearlyAnalysisResponse,
+  BacktestYearlyStatItem,
+  TempLevelStat,
+} from './backtest'
+
 // ---------- Types ----------
 
 export interface RunSimulationRequest {
@@ -37,6 +45,14 @@ export interface SimulationTaskListResponse {
   items: SimulationTaskItem[]
 }
 
+export type DimensionStatRow = {
+  name: string
+  total: number
+  wins: number
+  win_rate: number
+  avg_return: number
+}
+
 export interface SimulationReport {
   total_trades: number
   win_trades: number
@@ -48,6 +64,9 @@ export interface SimulationReport {
   unclosed_count: number
   skipped_count: number
   conclusion: string
+  temp_level_stats: TempLevelStat[]
+  exchange_stats: DimensionStatRow[]
+  market_stats: DimensionStatRow[]
 }
 
 export interface SimulationTaskDetailResponse {
@@ -77,6 +96,8 @@ export interface SimulationTradeItem {
   trade_type: string
   exchange: string | null
   market: string | null
+  market_temp_score: number | null
+  market_temp_level: string | null
   extra: Record<string, unknown> | null
 }
 
@@ -86,6 +107,8 @@ export interface SimulationTradeListResponse {
   page_size: number
   items: SimulationTradeItem[]
 }
+
+export type { BacktestFilteredMetrics, BacktestYearlyStatItem }
 
 // ---------- API Functions ----------
 
@@ -112,12 +135,62 @@ export async function getSimulationTrades(
   taskId: string,
   params?: {
     trade_type?: string
-    exchanges?: string
+    market_temp_levels?: string
     markets?: string
+    exchanges?: string
+    year?: number
     page?: number
     page_size?: number
   },
 ): Promise<SimulationTradeListResponse> {
   const { data } = await http.get(`/simulation/tasks/${taskId}/trades`, { params })
+  return data
+}
+
+export async function getSimulationFilteredReport(
+  taskId: string,
+  params?: {
+    trade_type?: string
+    market_temp_levels?: string[]
+    markets?: string[]
+    exchanges?: string[]
+    year?: number
+  },
+): Promise<BacktestFilteredReportResponse> {
+  const query = {
+    trade_type: params?.trade_type,
+    market_temp_levels: params?.market_temp_levels?.join(','),
+    markets: params?.markets?.join(','),
+    exchanges: params?.exchanges?.join(','),
+    year: params?.year,
+  }
+  const { data } = await http.get<BacktestFilteredReportResponse>(
+    `/simulation/tasks/${taskId}/filtered-report`,
+    { params: query },
+  )
+  return data
+}
+
+export async function getSimulationYearlyAnalysis(
+  taskId: string,
+  params?: {
+    trade_type?: string
+    market_temp_levels?: string[]
+    markets?: string[]
+    exchanges?: string[]
+    year?: number
+  },
+): Promise<BacktestYearlyAnalysisResponse> {
+  const query = {
+    trade_type: params?.trade_type,
+    market_temp_levels: params?.market_temp_levels?.join(','),
+    markets: params?.markets?.join(','),
+    exchanges: params?.exchanges?.join(','),
+    year: params?.year,
+  }
+  const { data } = await http.get<BacktestYearlyAnalysisResponse>(
+    `/simulation/tasks/${taskId}/yearly-analysis`,
+    { params: query },
+  )
   return data
 }

@@ -61,6 +61,21 @@ stop_loss_pct=0.10, arm_profit_pct=0.10""",
 
 【关键参数】
 stop_loss_pct=0.08, arm_profit_trigger_pct=0.15, trailing_stop_pct=0.05""",
+    "pe_zao_chen_shi_zi_xing": """【买入条件】
+- 早晨十字星形态：T-2大阴(跌≥2%) + T-1锤头线(相对T-2涨跌≤1%) + T阳线(实体≥3%)
+- 跌势结构：MA5<MA10<MA20，收盘<MA20
+- 前7天(T-9至T-3)≥5根阴线，累计跌幅≥10%
+- 收盘≤历史最高价的50%
+- PE百分位 < 10%（严格小于，字段：pe_percentile；PE为负或字段为空时跳过）
+- 最近一期已披露ROE > 15%（严格大于；数据不可用时跳过）
+- 入场：首次收盘站上MA5时以收盘价买入
+
+【卖出条件】
+- 止损：收盘≤买入价×0.92 → 固定按买入价×0.92卖出（亏损8%）
+- 移动止盈：涨幅≥15%后启动追踪，从最高价回落≥5% → 当日收盘价卖出
+
+【关键参数】
+pe_percentile_threshold=10.0, roe_threshold=15.0, stop_loss_pct=0.08, arm_profit_trigger_pct=0.15, trailing_stop_pct=0.05""",
     "chong_gao_hui_luo": """【买入条件】
 - 大涨回落：(high-open)/open≥10%，(high-close)/high≥3%
 - 成交量≥前一日×4/3
@@ -91,18 +106,29 @@ big_rise_pct=0.10, pullback_pct=0.03, lookback_trading_days=10""",
 gap_down_threshold=0.03, day_drop_threshold=0.07, volume_k=1.5, lookback_days=5""",
     "pe_value_investment": """【买入条件】
 - 排除ST/*ST股票和北交所
-- PE历史百分位 < 10（该股自2019年以来的PE最大最小值计算）
-- 最近一期财报ROE > 15%
-- 最近一期财报资产负债率 < 80%
-- 以当日收盘价买入
+- PE历史百分位从5%以上首次跌落到5%以内
+- PE为正数（pe > 0）
+- 以信号日的下一交易日开盘价买入
 
 【卖出条件】
-- PE历史百分位 >= 30 时以当日收盘价卖出
+- 止损：亏损 >= 20% → 以止损价卖出
+- 止盈：盈利 >= 30% → 以止盈价卖出
 
 【特殊说明】
 - 可同时持有多只股票，每只独立跟踪
 - 同一股票卖出后可在后续重新买入
 
 【关键参数】
-pe_buy_threshold=10, pe_sell_threshold=30, roe_min=15, debt_to_assets_max=80""",
+pe_entry_threshold=5, profit_take_pct=0.30, stop_loss_pct=0.20""",
+    "duo_tou_pai_lie": """【买入条件】
+- 低位约束：收盘价≤历史最高价的1/2
+- 触发日前连续20个交易日：每日「MA5 > MA10 > MA20」均不成立（仅看三线大小，不要求均线递增）
+- 触发日首次多头排列：MA5 > MA10 > MA20，且三线均比前一天高；前一日不满足 MA5 > MA10 > MA20
+- 入场：多头排列日的下一交易日以开盘价买入
+
+【卖出条件】
+- 相对买入价 +10% 止盈、-6% 止损（日线 high/low 判定；历史回测与历史模拟一致）
+
+【关键参数】
+low_position_ratio=1/2, prior_no_bullish_days=20, take_profit_pct=0.10, stop_loss_pct=0.06""",
 }

@@ -123,6 +123,7 @@ def list_screening(
     macd_red: bool | None = None,
     ma_cross: bool | None = None,
     macd_cross: bool | None = None,
+    pe_percentile_order: Literal["asc", "desc"] | None = None,
     data_date: date | None = None,
 ) -> tuple[list[dict[str, Any]], int, date | None]:
     """
@@ -140,6 +141,7 @@ def list_screening(
             macd_red=macd_red,
             ma_cross=ma_cross,
             macd_cross=macd_cross,
+            pe_percentile_order=pe_percentile_order,
             data_date=data_date,
         )
     if timeframe == "weekly":
@@ -153,6 +155,7 @@ def list_screening(
             macd_red=macd_red,
             ma_cross=ma_cross,
             macd_cross=macd_cross,
+            pe_percentile_order=pe_percentile_order,
             data_date=data_date,
         )
     return _list_screening_monthly(
@@ -165,6 +168,7 @@ def list_screening(
         macd_red=macd_red,
         ma_cross=ma_cross,
         macd_cross=macd_cross,
+        pe_percentile_order=pe_percentile_order,
         data_date=data_date,
     )
 
@@ -225,6 +229,7 @@ def _query_screening(
     macd_red: bool | None,
     ma_cross: bool | None,
     macd_cross: bool | None,
+    pe_percentile_order: Literal["asc", "desc"] | None = None,
     row_mapper: Callable[..., dict[str, Any]],
     join_daily_extrema: bool = False,
 ) -> tuple[list[dict[str, Any]], int, date]:
@@ -300,7 +305,20 @@ def _query_screening(
 
     order_col = Curr.stock_code if need_cross else bar_model.stock_code
     total = base.count()
-    rows = base.order_by(order_col).offset((page - 1) * page_size).limit(page_size).all()
+    
+    # 根据 PE 百分位排序（MySQL 兼容写法）
+    if pe_percentile_order == "asc":
+        order_bar = Curr if need_cross else bar_model
+        # 升序：NULL 排在最后（用 IS NULL 判断，0 表示排在后面）
+        base = base.order_by(order_bar.pe_percentile.is_(None).asc(), order_bar.pe_percentile.asc(), order_col)
+    elif pe_percentile_order == "desc":
+        order_bar = Curr if need_cross else bar_model
+        # 降序：NULL 排在最后
+        base = base.order_by(order_bar.pe_percentile.is_(None).asc(), order_bar.pe_percentile.desc(), order_col)
+    else:
+        base = base.order_by(order_col)
+    
+    rows = base.offset((page - 1) * page_size).limit(page_size).all()
     if daily_ext is not None:
         items = [row_mapper(q, b, r, d) for q, b, r, d in rows]
     else:
@@ -319,6 +337,7 @@ def _list_screening_daily(
     macd_red: bool | None,
     ma_cross: bool | None,
     macd_cross: bool | None,
+    pe_percentile_order: Literal["asc", "desc"] | None = None,
     data_date: date | None,
 ) -> tuple[list[dict[str, Any]], int, date | None]:
     data_date = data_date or get_latest_bar_date(db, "daily")
@@ -337,6 +356,7 @@ def _list_screening_daily(
         macd_red=macd_red,
         ma_cross=ma_cross,
         macd_cross=macd_cross,
+        pe_percentile_order=pe_percentile_order,
         row_mapper=_row_to_item_daily,
         join_daily_extrema=False,
     )
@@ -354,6 +374,7 @@ def _list_screening_weekly(
     macd_red: bool | None,
     ma_cross: bool | None,
     macd_cross: bool | None,
+    pe_percentile_order: Literal["asc", "desc"] | None = None,
     data_date: date | None,
 ) -> tuple[list[dict[str, Any]], int, date | None]:
     data_date = data_date or get_latest_bar_date(db, "weekly")
@@ -372,6 +393,7 @@ def _list_screening_weekly(
         macd_red=macd_red,
         ma_cross=ma_cross,
         macd_cross=macd_cross,
+        pe_percentile_order=pe_percentile_order,
         row_mapper=_row_to_item_weekly_monthly,
         join_daily_extrema=True,
     )
@@ -389,6 +411,7 @@ def _list_screening_monthly(
     macd_red: bool | None,
     ma_cross: bool | None,
     macd_cross: bool | None,
+    pe_percentile_order: Literal["asc", "desc"] | None = None,
     data_date: date | None,
 ) -> tuple[list[dict[str, Any]], int, date | None]:
     data_date = data_date or get_latest_bar_date(db, "monthly")
@@ -407,6 +430,7 @@ def _list_screening_monthly(
         macd_red=macd_red,
         ma_cross=ma_cross,
         macd_cross=macd_cross,
+        pe_percentile_order=pe_percentile_order,
         row_mapper=_row_to_item_weekly_monthly,
         join_daily_extrema=True,
     )
