@@ -2,32 +2,55 @@
 市盈率长线价值投资策略。
 
 【策略名称】：市盈率长线价值投资
-【目标】：捕捉 PE 历史百分位首次进入极度低估区域的信号，长期持有至止盈止损。
+【目标】：筛选 PE 历史百分位极度低估 + 基本面健康的股票，用于长线价值投资参考。
 
 【适用范围】：
 - 市场：A 股（排除 ST 股票、北交所）
 - 数据粒度：日线
 - 依赖字段：pe_percentile / pe / open / high / low / close（来自 stock_daily_bar）
+            roe / debt_to_assets / report_date（来自 stock_financial_report）
 
 【核心规则】：
-1) 买入条件：
+
+1) 选股条件（execute 方法）：
+   - PE 百分位 < 5%（严格小于）
+   - PE 为正数（pe > 0）
+   - 最近一期已披露 ROE > 15%（严格大于）
+   - 最近一期已披露资产负债率 < 80%（严格小于）
+   - 任一财务指标缺失或不满足条件时跳过该股票
+
+2) 回测买入条件（backtest 方法）：
    - PE 百分位从 5% 以上首次跌落到 5% 以内
    - PE 为正数（pe > 0）
    - 以信号日的下一交易日开盘价买入
 
-2) 卖出条件（优先级从高到低）：
+3) 回测卖出条件（优先级从高到低）：
    - 止损：亏损 >= 20% → 以止损价卖出
    - 止盈：盈利 >= 30% → 以止盈价卖出
 
-3) 多标的：
+4) 多标的：
    - 可同时持有多只股票，每只股票独立跟踪
    - 同一股票卖出后可在后续重新买入
 
 【关键口径与阈值】：
-- PE 百分位买入阈值：从 5% 以上跌到 5% 以内（首次进入）
+- 选股 PE 百分位阈值：< 5%（不要求首次跌入，只要满足就选出）
+- 回测 PE 百分位阈值：从 5% 以上首次跌到 5% 以内
 - PE 必须为正数
+- ROE 阈值：> 15%
+- 资产负债率阈值：< 80%
 - 止盈比例：+30%
 - 止损比例：-20%
+
+【边界与异常】：
+- pe_percentile 为 None 或 >= 5.0 → 跳过
+- pe 为 None 或 <= 0 → 跳过
+- roe 为 None 或无财报记录 → 跳过
+- roe <= 15.0 → 跳过
+- debt_to_assets 为 None 或 >= 80.0 → 跳过
+
+【输出与可追溯性】：
+- StrategyCandidate.summary 包含：pe_percentile / pe / roe / debt_to_assets / report_date
+- 回测交易记录包含触发日 PE 百分位等信息
 """
 
 from __future__ import annotations
@@ -41,7 +64,7 @@ from decimal import Decimal
 from sqlalchemy import select, and_
 
 from app.database import SessionLocal
-from app.models import StockBasic, StockDailyBar
+from app.models import StockBasic, StockDailyBar, StockFinancialReport
 from app.services.strategy.strategy_base import (
     BacktestResult,
     BacktestTrade,
@@ -58,6 +81,8 @@ logger = logging.getLogger(__name__)
 @dataclass(frozen=True)
 class _Params:
     pe_entry_threshold: float = 5.0      # PE百分位 < 5% 时触发
+    roe_threshold: float = 15.0          # ROE > 15%
+    debt_to_assets_threshold: float = 80.0  # 资产负债率 < 80%
     profit_take_pct: float = 0.30        # 止盈：盈利30%
     stop_loss_pct: float = 0.20          # 止损：亏损20%
 
@@ -68,6 +93,50 @@ def _to_float(v) -> float | None:
     if isinstance(v, Decimal):
         return float(v)
     return float(v)
+
+
+def _batch_load_latest_financial(
+    db,
+    stock_codes: list[str],
+    as_of_date: date,
+) -> dict[str, dict[str, float | date] | None]:
+    """
+    批量查询各标的截至 as_of_date 最近一期已披露的财务数据。
+    返回 {stock_code: {"roe": float, "debt_to_assets": float, "report_date": date}} 或 {stock_code: None}。
+    """
+    if not stock_codes:
+        return {}
+
+    rows = db.execute(
+        select(
+            StockFinancialReport.stock_code,
+            StockFinancialReport.report_date,
+            StockFinancialReport.roe,
+            StockFinancialReport.debt_to_assets,
+        )
+        .where(
+            StockFinancialReport.stock_code.in_(stock_codes),
+            StockFinancialReport.report_date <= as_of_date,
+            StockFinancialReport.roe.isnot(None),
+            StockFinancialReport.debt_to_assets.isnot(None),
+        )
+        .order_by(
+            StockFinancialReport.stock_code,
+            StockFinancialReport.report_date.desc(),
+        )
+    ).all()
+
+    result: dict[str, dict[str, float | date] | None] = {code: None for code in stock_codes}
+    seen: set[str] = set()
+    for row in rows:
+        if row.stock_code not in seen:
+            seen.add(row.stock_code)
+            result[row.stock_code] = {
+                "roe": float(row.roe),
+                "debt_to_assets": float(row.debt_to_assets),
+                "report_date": row.report_date,
+            }
+    return result
 
 
 class PeValueInvestmentStrategy(StockStrategy):
@@ -81,17 +150,19 @@ class PeValueInvestmentStrategy(StockStrategy):
             strategy_id=self.strategy_id,
             name="市盈率长线价值投资",
             version=self.version,
-            short_description="PE百分位首次跌入5%以内时买入，盈利30%止盈，亏损20%止损。",
+            short_description="筛选 PE 百分位 < 5% + ROE > 15% + 资产负债率 < 80% 的股票，用于长线价值投资参考。",
             description=(
-                "本策略捕捉PE历史百分位首次进入极度低估区域的信号："
-                "当PE百分位从5%以上首次跌落到5%以内时，以次日开盘价买入。"
-                "卖出采用止盈止损机制：盈利30%止盈，亏损20%止损。"
+                "本策略筛选 PE 历史百分位极度低估且基本面健康的股票："
+                "PE 百分位 < 5%、ROE > 15%、资产负债率 < 80%。"
+                "回测模式下，当 PE 百分位从 5% 以上首次跌落到 5% 以内时买入，"
+                "盈利 30% 止盈，亏损 20% 止损。"
             ),
             assumptions=[
                 "PE 百分位使用该股自 2019 年以来的历史 PE 最大最小值计算。",
-                "买入条件：PE 百分位从 5% 以上首次跌落到 5% 以内，且 PE > 0。",
-                "买入价格：信号日的下一交易日开盘价。",
-                "卖出条件（优先级从高到低）：",
+                "选股条件：PE 百分位 < 5%、PE > 0、ROE > 15%、资产负债率 < 80%。",
+                "回测买入条件：PE 百分位从 5% 以上首次跌落到 5% 以内，且 PE > 0。",
+                "回测买入价格：信号日的下一交易日开盘价。",
+                "回测卖出条件（优先级从高到低）：",
                 "  1. 止损：亏损 >= 20% 时以止损价卖出。",
                 "  2. 止盈：盈利 >= 30% 时以止盈价卖出。",
                 "排除 ST/*ST 股票和北交所股票。",
@@ -100,6 +171,7 @@ class PeValueInvestmentStrategy(StockStrategy):
             ],
             risks=[
                 "PE 低不代表安全，可能存在业绩持续恶化的价值陷阱。",
+                "ROE 和资产负债率基于最近一期财报，可能滞后于当前经营状况。",
                 "长线持有期间可能遭遇黑天鹅事件。",
                 "数据缺失、停牌会影响回测结果准确性。",
             ],
@@ -111,7 +183,7 @@ class PeValueInvestmentStrategy(StockStrategy):
     # ------------------------------------------------------------------
 
     def execute(self, *, as_of_date: date | None = None) -> StrategyExecutionResult:
-        """选股执行：识别当日 PE 百分位从 5% 以上首次跌落到 5% 以内的股票。"""
+        """选股执行：筛选 PE 百分位 < 5% + ROE > 15% + 资产负债率 < 80% 的股票。"""
         params = _Params()
         if as_of_date is None:
             raise ValueError("as_of_date 不能为空")
@@ -143,6 +215,8 @@ class PeValueInvestmentStrategy(StockStrategy):
                     assumptions={"data_granularity": "日线", "stock_universe": "A股(排除ST/北交所)"},
                     params={
                         "pe_entry_threshold": params.pe_entry_threshold,
+                        "roe_threshold": params.roe_threshold,
+                        "debt_to_assets_threshold": params.debt_to_assets_threshold,
                         "profit_take_pct": params.profit_take_pct,
                         "stop_loss_pct": params.stop_loss_pct,
                     },
@@ -152,8 +226,8 @@ class PeValueInvestmentStrategy(StockStrategy):
 
             candidate_codes = [b.stock_code for b in candidate_bars]
 
-            # 2. 批量查询前一日的 PE 百分位（用于判断是否首次跌入）
-            prev_pe_map = self._batch_prev_pe_percentile(db, candidate_codes, as_of_date)
+            # 2. 批量查询最近一期财务数据（ROE + 资产负债率）
+            financial_map = _batch_load_latest_financial(db, candidate_codes, as_of_date)
 
             # 3. 筛选
             stock_names = self._load_stock_names(db)
@@ -163,10 +237,18 @@ class PeValueInvestmentStrategy(StockStrategy):
             signals: list[StrategySignal] = []
 
             for bar in candidate_bars:
-                prev_pe = prev_pe_map.get(bar.stock_code)
-                
-                # 检查是否首次跌入：前一日 PE 百分位 >= 5%，当日 < 5%
-                if prev_pe is None or prev_pe < params.pe_entry_threshold:
+                financial = financial_map.get(bar.stock_code)
+
+                # 检查财务数据是否满足条件
+                if financial is None:
+                    continue
+
+                roe = financial["roe"]
+                debt_to_assets = financial["debt_to_assets"]
+                report_date = financial["report_date"]
+
+                # ROE > 15% 且 资产负债率 < 80%
+                if roe <= params.roe_threshold or debt_to_assets >= params.debt_to_assets_threshold:
                     continue
 
                 items.append(StrategyCandidate(
@@ -176,8 +258,11 @@ class PeValueInvestmentStrategy(StockStrategy):
                     trigger_date=as_of_date,
                     summary={
                         "pe_percentile": _to_float(bar.pe_percentile),
-                        "prev_pe_percentile": prev_pe,
                         "pe": _to_float(bar.pe),
+                        "roe": roe,
+                        "debt_to_assets": debt_to_assets,
+                        "report_date": report_date.isoformat() if report_date else None,
+                        "close": _to_float(bar.close),
                     },
                 ))
                 signals.append(StrategySignal(
@@ -186,13 +271,15 @@ class PeValueInvestmentStrategy(StockStrategy):
                     event_type="trigger",
                     payload={
                         "pe_percentile": _to_float(bar.pe_percentile),
-                        "prev_pe_percentile": prev_pe,
                         "pe": _to_float(bar.pe),
+                        "roe": roe,
+                        "debt_to_assets": debt_to_assets,
+                        "report_date": report_date.isoformat() if report_date else None,
                     },
                 ))
 
             logger.info(
-                "市盈率长线价值选股完成: as_of_date=%s, 扫描 %d 只低PE股, 首次跌入 %d 只候选",
+                "市盈率长线价值选股完成: as_of_date=%s, 扫描 %d 只低PE股, 符合条件 %d 只候选",
                 as_of_date, len(candidate_bars), len(items),
             )
 
@@ -201,6 +288,8 @@ class PeValueInvestmentStrategy(StockStrategy):
                 assumptions={"data_granularity": "日线", "stock_universe": "A股(排除ST/北交所)"},
                 params={
                     "pe_entry_threshold": params.pe_entry_threshold,
+                    "roe_threshold": params.roe_threshold,
+                    "debt_to_assets_threshold": params.debt_to_assets_threshold,
                     "profit_take_pct": params.profit_take_pct,
                     "stop_loss_pct": params.stop_loss_pct,
                 },

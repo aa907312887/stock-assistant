@@ -104,22 +104,30 @@ big_rise_pct=0.10, pullback_pct=0.03, lookback_trading_days=10""",
 
 【关键参数】
 gap_down_threshold=0.03, day_drop_threshold=0.07, volume_k=1.5, lookback_days=5""",
-    "pe_value_investment": """【买入条件】
+    "pe_value_investment": """【选股条件】
 - 排除ST/*ST股票和北交所
+- PE百分位 < 5%（严格小于）
+- PE为正数（pe > 0）
+- 最近一期已披露ROE > 15%（严格大于）
+- 最近一期已披露资产负债率 < 80%（严格小于）
+
+【回测买入条件】
 - PE历史百分位从5%以上首次跌落到5%以内
 - PE为正数（pe > 0）
 - 以信号日的下一交易日开盘价买入
 
-【卖出条件】
+【回测卖出条件】
 - 止损：亏损 >= 20% → 以止损价卖出
 - 止盈：盈利 >= 30% → 以止盈价卖出
 
 【特殊说明】
+- 选股不要求"首次跌入"，只要满足条件就选出
+- 回测模式下才使用"首次跌入"逻辑确定买点
 - 可同时持有多只股票，每只独立跟踪
 - 同一股票卖出后可在后续重新买入
 
 【关键参数】
-pe_entry_threshold=5, profit_take_pct=0.30, stop_loss_pct=0.20""",
+pe_entry_threshold=5.0, roe_threshold=15.0, debt_to_assets_threshold=80.0, profit_take_pct=0.30, stop_loss_pct=0.20""",
     "duo_tou_pai_lie": """【买入条件】
 - 低位约束：收盘价≤历史最高价的1/2
 - 触发日前连续20个交易日：每日「MA5 > MA10 > MA20」均不成立（仅看三线大小，不要求均线递增）

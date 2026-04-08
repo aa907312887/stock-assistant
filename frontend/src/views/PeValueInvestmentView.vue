@@ -8,10 +8,10 @@
             <template #content>
               <div class="tipBlock">
                 <p>本页按日线扫描全 A 股（排除 ST 和北交所），列出满足长线价值投资买入条件的股票。</p>
-                <p><strong>PE 百分位 &lt; 10</strong>：该股当前 PE 处于自 2019 年以来历史最低 10% 区间。</p>
+                <p><strong>PE 百分位 &lt; 5%</strong>：该股当前 PE 处于自 2019 年以来历史最低 5% 区间。</p>
                 <p><strong>ROE &gt; 15%</strong>：最近一期财报净资产收益率超过 15%。</p>
                 <p><strong>资产负债率 &lt; 80%</strong>：最近一期财报资产负债率低于 80%。</p>
-                <p>卖出条件：PE 百分位升至 30% 以上。</p>
+                <p>只要满足条件即选出，不要求首次跌入。</p>
                 <p>不构成投资建议。</p>
               </div>
             </template>
@@ -19,7 +19,7 @@
           </el-tooltip>
         </div>
         <div class="subtitle">
-          PE 极度低估 + 基本面健康（ROE &gt; 15%、负债 &lt; 80%）时买入，估值修复（PE 百分位 &ge; 30）后卖出。
+          PE 极度低估（百分位 &lt; 5%）+ 基本面健康（ROE &gt; 15%、负债 &lt; 80%）的股票。
         </div>
       </div>
       <div class="actions">
@@ -41,7 +41,7 @@
         <div class="cardTitle">口径说明</div>
       </template>
       <div class="note">
-        筛选 PE 历史百分位低于 10% 且最近一期财报 ROE &gt; 15%、资产负债率 &lt; 80% 的股票。排除 ST/*ST 和北交所股票。可手动选择日期执行选股。
+        筛选 PE 历史百分位低于 5% 且最近一期财报 ROE &gt; 15%、资产负债率 &lt; 80% 的股票。排除 ST/*ST 和北交所股票。可手动选择日期执行选股。
       </div>
     </el-card>
 
