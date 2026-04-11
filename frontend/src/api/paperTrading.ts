@@ -288,8 +288,15 @@ export const paperTradingApi = {
     }
   ) => http.get<OrderListResponse>(`/paper-trading/sessions/${sessionId}/orders`, { params }),
 
-  getChartData: (params: { stock_code: string; end_date: string; phase: string; period?: string; limit?: number }) =>
-    http.get<ChartDataResponse>('/paper-trading/chart-data', { params }),
+  getChartData: (params: {
+    stock_code: string
+    end_date: string
+    phase: string
+    period?: string
+    /** false 时配合 limit 仅取最近 N 根；默认 true 从库中最早一根取至 end_date */
+    full_history?: boolean
+    limit?: number
+  }) => http.get<ChartDataResponse>('/paper-trading/chart-data', { params }),
 
   resolveStock: (params: { q: string; limit?: number }) =>
     http.get<StockResolveResponse>('/paper-trading/resolve-stock', { params }),

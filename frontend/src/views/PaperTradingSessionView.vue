@@ -243,7 +243,7 @@
         <el-tooltip placement="bottom" :show-after="200">
           <template #content>
             <div style="max-width: 260px; line-height: 1.6">
-              建议先使用「查看股票信息」了解标的后再下单。需已通过「查询」加载当前股票 K 线；若当前为周/月视图，将自动切回<strong>日线</strong>后再打开买入弹窗，以便使用模拟<strong>当日</strong>开盘价与涨跌停快捷填入。
+              建议先使用「查看股票信息」了解标的后再下单。需已通过「查询」加载当前股票 K 线；若当前为周/月视图，将自动切回<strong>日线</strong>后再打开买入弹窗。买入弹窗默认价格：<strong>开盘阶段</strong>为当日开盘价，<strong>收盘阶段</strong>为当日收盘价（更符合已收盘后可获知的价格）；仍可用「开盘价 / 收盘价」按钮切换。
             </div>
           </template>
           <el-button
@@ -817,6 +817,26 @@ function toCandleOHLC(d: { open: number | null; close: number | null; low: numbe
   return [o, c, lo, hi]
 }
 
+/**
+ * 全量历史 K 线首次加载时，若默认 0～100% 缩放会导致蜡烛过细。
+ * 按周期给「约可见根数」，聚焦最近一段；inside 与 slider 须同 start/end，否则会不一致。
+ */
+function initialDataZoomPercent(period: string, pointCount: number): { start: number; end: number } {
+  if (pointCount <= 1) return { start: 0, end: 100 }
+  let wantVisible: number
+  if (period === 'weekly') {
+    wantVisible = 72
+  } else if (period === 'monthly') {
+    wantVisible = 36
+  } else {
+    // 日线全量历史很长，默认只展开最近约一季交易日，便于首屏看清 K 线与均线；可拖滑块看更早
+    wantVisible = 72
+  }
+  const visible = Math.min(pointCount, wantVisible)
+  const start = ((pointCount - visible) / pointCount) * 100
+  return { start: Math.max(0, Math.min(100, start)), end: 100 }
+}
+
 function renderChart(data: typeof store.chartData) {
   if (!data || !chartInstance) return
   const dates = data.data.map(d => d.date)
@@ -827,6 +847,8 @@ function renderChart(data: typeof store.chartData) {
     store.isOpenPhase &&
     data.period === 'daily' &&
     data.open_price != null
+
+  const dz = initialDataZoomPercent(data.period, dates.length)
 
   chartInstance.setOption({
     animation: false,
@@ -848,8 +870,8 @@ function renderChart(data: typeof store.chartData) {
       { scale: true, gridIndex: 2, splitNumber: 2, axisLabel: { fontSize: 10 } },
     ],
     dataZoom: [
-      { type: 'inside', xAxisIndex: [0, 1, 2], start: 60, end: 100 },
-      { type: 'slider', xAxisIndex: [0, 1, 2], bottom: 4, height: 16 },
+      { type: 'inside', xAxisIndex: [0, 1, 2], start: dz.start, end: dz.end },
+      { type: 'slider', xAxisIndex: [0, 1, 2], bottom: 4, height: 16, start: dz.start, end: dz.end },
     ],
     series: [
       {
@@ -1034,13 +1056,23 @@ async function openBuyFromChartToolbar() {
   openBuyDialog(buildStockQuoteFromChartData(cd))
 }
 
+/** 买入默认价：开盘阶段用开盘价；收盘阶段用收盘价（无收盘价时回退开盘价） */
+function defaultBuyPriceForPhase(stock: StockQuote): number {
+  if (store.isClosePhase) {
+    if (stock.close != null && stock.close > 0) return stock.close
+    return stock.open ?? 0
+  }
+  if (stock.open != null && stock.open > 0) return stock.open
+  return stock.close ?? 0
+}
+
 function openBuyDialog(stock: StockQuote) {
   if (!store.isSessionActive) {
     ElMessage.warning('本模拟已结束，无法买入')
     return
   }
   buyDialog.value = { visible: true, stock }
-  buyForm.value = { price: stock.open ?? 0, quantity: 100 }
+  buyForm.value = { price: defaultBuyPriceForPhase(stock), quantity: 100 }
 }
 
 function openSellDialog(pos: PositionSummary) {

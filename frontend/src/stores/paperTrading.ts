@@ -157,7 +157,7 @@ export const usePaperTradingStore = defineStore('paperTrading', () => {
         end_date: currentSession.value.current_date,
         phase: currentSession.value.current_phase,
         period,
-        limit: 300,
+        full_history: true,
       })
       chartData.value = res.data
     } catch (e: any) {

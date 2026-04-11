@@ -113,11 +113,15 @@ def api_chart_data(
     end_date: date = Query(..., description="当前模拟日期"),
     phase: str = Query(..., description="open / close"),
     period: str = Query(default="daily", description="daily / weekly / monthly"),
-    limit: int = Query(default=300, ge=1, le=500),
+    full_history: bool = Query(
+        default=True,
+        description="true：自库中该股最早一根 K（至 end_date）全量返回，便于长期趋势与周/月均线；false：仅最近 limit 根",
+    ),
+    limit: int = Query(default=300, ge=1, le=500, description="仅 full_history=false 时生效"),
     db: Session = Depends(get_db),
 ):
     """获取股票图表数据。phase=open 时最新 K 线 high/low/close 返回 null。"""
-    return svc.get_chart_data(db, stock_code, end_date, phase, period, limit)
+    return svc.get_chart_data(db, stock_code, end_date, phase, period, limit, full_history=full_history)
 
 
 @router.get("/resolve-stock", response_model=StockResolveResponse)

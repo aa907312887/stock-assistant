@@ -349,7 +349,8 @@
 | `end_date` | string | 是 | 截止日期（当前模拟日期） |
 | `phase` | string | 是 | `open` / `close`。**日线**：`open` 时最新一根的 high/low/close、volume、pct_change、MACD 为 null。**周线/月线**：仅返回 `trade_week_end` / `trade_month_end` ≤ `end_date` 的 K 线（不超模拟日）；均线与 MACD 取自 `stock_weekly_bar` / `stock_monthly_bar`。周线、月线在 **`open` 且最新一根的周期末端日期等于 `end_date`** 时，对最新一根同样掩码 high/low/close、volume、pct_change 与 MACD（不提前暴露周期结果）；MA 字段与日线规则一致仍返回库中值。`close` 时上述掩码字段补全。 |
 | `period` | string | 否 | `daily`（默认）/ `weekly` / `monthly` |
-| `limit` | int | 否 | 返回条数，默认 300，最大 500 |
+| `full_history` | bool | 否 | 默认 `true`：`true` 时自库中该股**最早一根**对应周期 K（且周期末端/交易日 ≤ `end_date`）起**全部**返回至 `end_date`，便于长期趋势与周/月均线前置样本；`false` 时仅返回**最近** `limit` 根（行为同旧版）。 |
+| `limit` | int | 否 | 仅 `full_history=false` 时生效；默认 300，最大 500 |
 
 **响应 200**：
 ```json

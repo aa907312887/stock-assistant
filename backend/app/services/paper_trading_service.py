@@ -776,8 +776,15 @@ def get_chart_data(
     phase: str,
     period: str,
     limit: int,
+    *,
+    full_history: bool = True,
 ) -> ChartDataResponse:
-    """获取股票图表数据。日/周/月均限制在 end_date 之前（含）的周期；phase=open 时最新一根按各周期规则掩码未揭晓的 OHLCV、涨跌幅与 MACD。"""
+    """获取股票图表数据。
+
+    - full_history=True（默认）：日/周/月均为「库中该股最早一根 ≤ end_date 的周期 K」起至 end_date，全量升序返回，便于长期趋势线与周/月 MA/MACD 前置数据。
+    - full_history=False：仅最近 limit 根（原行为）。
+    phase=open 时最新一根按各周期规则掩码未揭晓的 OHLCV、涨跌幅与 MACD。
+    """
     stock_name = stock_code
     try:
         basic = db.query(StockBasic).filter(StockBasic.code == stock_code).first()
@@ -793,14 +800,15 @@ def get_chart_data(
     limit_down = None
 
     if period == "weekly":
-        rows = (
-            db.query(StockWeeklyBar)
-            .filter(StockWeeklyBar.stock_code == stock_code, StockWeeklyBar.trade_week_end <= end_date)
-            .order_by(StockWeeklyBar.trade_week_end.desc())
-            .limit(limit)
-            .all()
+        q_w = db.query(StockWeeklyBar).filter(
+            StockWeeklyBar.stock_code == stock_code,
+            StockWeeklyBar.trade_week_end <= end_date,
         )
-        rows = list(reversed(rows))
+        if full_history:
+            rows = q_w.order_by(StockWeeklyBar.trade_week_end.asc()).all()
+        else:
+            rows = q_w.order_by(StockWeeklyBar.trade_week_end.desc()).limit(limit).all()
+            rows = list(reversed(rows))
         n = len(rows)
         for i, r in enumerate(rows):
             is_latest = i == n - 1
@@ -825,14 +833,15 @@ def get_chart_data(
             ))
 
     elif period == "monthly":
-        rows = (
-            db.query(StockMonthlyBar)
-            .filter(StockMonthlyBar.stock_code == stock_code, StockMonthlyBar.trade_month_end <= end_date)
-            .order_by(StockMonthlyBar.trade_month_end.desc())
-            .limit(limit)
-            .all()
+        q_m = db.query(StockMonthlyBar).filter(
+            StockMonthlyBar.stock_code == stock_code,
+            StockMonthlyBar.trade_month_end <= end_date,
         )
-        rows = list(reversed(rows))
+        if full_history:
+            rows = q_m.order_by(StockMonthlyBar.trade_month_end.asc()).all()
+        else:
+            rows = q_m.order_by(StockMonthlyBar.trade_month_end.desc()).limit(limit).all()
+            rows = list(reversed(rows))
         n = len(rows)
         for i, r in enumerate(rows):
             is_latest = i == n - 1
@@ -856,14 +865,15 @@ def get_chart_data(
             ))
 
     else:  # daily
-        rows = (
-            db.query(StockDailyBar)
-            .filter(StockDailyBar.stock_code == stock_code, StockDailyBar.trade_date <= end_date)
-            .order_by(StockDailyBar.trade_date.desc())
-            .limit(limit)
-            .all()
+        q_d = db.query(StockDailyBar).filter(
+            StockDailyBar.stock_code == stock_code,
+            StockDailyBar.trade_date <= end_date,
         )
-        rows = list(reversed(rows))
+        if full_history:
+            rows = q_d.order_by(StockDailyBar.trade_date.asc()).all()
+        else:
+            rows = q_d.order_by(StockDailyBar.trade_date.desc()).limit(limit).all()
+            rows = list(reversed(rows))
         for r in rows:
             is_latest = (r.trade_date == end_date)
             # phase=open 时，最新一根 K 线隐藏 high/low/close/macd
