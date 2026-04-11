@@ -229,7 +229,6 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref, computed } from 'vue'
 import { ElMessage } from 'element-plus'
-import { QuestionFilled } from '@element-plus/icons-vue'
 import { getScreening, getLatestDate, type ScreeningItem, type ScreeningTimeframe } from '@/api/stock'
 import { eastMoneyQuoteUrl } from '@/utils/eastMoneyQuoteUrl'
 

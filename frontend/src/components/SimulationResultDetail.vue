@@ -361,7 +361,7 @@
 
 <script setup lang="ts">
 import { ref, watch, onUnmounted, computed } from 'vue'
-import { Loading, QuestionFilled } from '@element-plus/icons-vue'
+import { Loading } from '@element-plus/icons-vue'
 import {
   getSimulationTaskDetail,
   getSimulationTrades,

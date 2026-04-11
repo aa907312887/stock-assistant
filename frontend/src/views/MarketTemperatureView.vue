@@ -57,7 +57,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import { QuestionFilled } from '@element-plus/icons-vue'
 import { useUserStore } from '@/stores/user'
 import {
   getLatestMarketTemperature,

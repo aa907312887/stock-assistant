@@ -70,7 +70,6 @@
 
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue'
-import { QuestionFilled } from '@element-plus/icons-vue'
 import { getBacktestTasks, type BacktestTaskItem } from '@/api/backtest'
 
 const emit = defineEmits<{

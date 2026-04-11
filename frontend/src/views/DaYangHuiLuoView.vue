@@ -189,7 +189,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import { QuestionFilled } from '@element-plus/icons-vue'
 import type { ExecuteStrategyResponse, ExecutionSnapshot, StrategySelectionItem } from '@/api/strategies'
 import { executeStrategy, getLatestStrategyResult } from '@/api/strategies'
 import { eastMoneyQuoteUrl } from '@/utils/eastMoneyQuoteUrl'

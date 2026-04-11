@@ -7,10 +7,11 @@
           <el-tooltip placement="bottom-start" :show-after="200">
             <template #content>
               <div class="tipBlock">
-                <p>本页按日线扫描全 A 股（排除 ST 和北交所），列出满足长线价值投资买入条件的股票。</p>
+                <p>本页按日线扫描全 A 股（排除 ST、北交所、总市值&lt;300亿的小盘股），列出满足长线价值投资买入条件的股票。</p>
                 <p><strong>PE 百分位 &lt; 5%</strong>：该股当前 PE 处于自 2019 年以来历史最低 5% 区间。</p>
-                <p><strong>ROE &gt; 15%</strong>：最近一期财报净资产收益率超过 15%。</p>
+                <p><strong>连续 3 期 ROE &gt; 15%</strong>：最近连续 3 个财报期净资产收益率均超过 15%。</p>
                 <p><strong>资产负债率 &lt; 80%</strong>：最近一期财报资产负债率低于 80%。</p>
+                <p><strong>总市值 &ge; 300 亿</strong>：排除小盘股。</p>
                 <p>只要满足条件即选出，不要求首次跌入。</p>
                 <p>不构成投资建议。</p>
               </div>
@@ -19,7 +20,7 @@
           </el-tooltip>
         </div>
         <div class="subtitle">
-          PE 极度低估（百分位 &lt; 5%）+ 基本面健康（ROE &gt; 15%、负债 &lt; 80%）的股票。
+          PE 极度低估（百分位 &lt; 5%）+ 基本面健康（连续3期 ROE &gt; 15%、负债 &lt; 80%）+ 总市值 &ge; 300 亿的股票。
         </div>
       </div>
       <div class="actions">
@@ -41,7 +42,7 @@
         <div class="cardTitle">口径说明</div>
       </template>
       <div class="note">
-        筛选 PE 历史百分位低于 5% 且最近一期财报 ROE &gt; 15%、资产负债率 &lt; 80% 的股票。排除 ST/*ST 和北交所股票。可手动选择日期执行选股。
+        筛选 PE 历史百分位低于 5%、最近连续 3 期财报 ROE &gt; 15%、资产负债率 &lt; 80%、总市值 &ge; 300 亿的股票。排除 ST/*ST、北交所和小盘股。可手动选择日期执行选股。
       </div>
     </el-card>
 
@@ -125,14 +126,22 @@
             </span>
           </template>
         </el-table-column>
-        <el-table-column label="ROE(%)" width="90" align="right">
-          <template #default="{ row }">{{ fmtNum(row.summary?.roe) }}</template>
+        <el-table-column label="ROE(连续3期)" min-width="140" align="right">
+          <template #default="{ row }">
+            <span v-if="Array.isArray(row.summary?.roe_periods)">
+              {{ row.summary.roe_periods.map((v: number) => v.toFixed(1)).join(' / ') }}
+            </span>
+            <span v-else>{{ fmtNum(row.summary?.roe) }}</span>
+          </template>
         </el-table-column>
         <el-table-column label="负债率(%)" width="100" align="right">
           <template #default="{ row }">{{ fmtNum(row.summary?.debt_to_assets) }}</template>
         </el-table-column>
         <el-table-column label="报告期" width="110">
           <template #default="{ row }">{{ row.summary?.report_date ?? '-' }}</template>
+        </el-table-column>
+        <el-table-column label="总市值(亿)" width="110" align="right">
+          <template #default="{ row }">{{ fmtNum(row.summary?.total_market_cap_yi) }}</template>
         </el-table-column>
         <el-table-column label="收盘价" width="90" align="right">
           <template #default="{ row }">{{ fmtNum(row.summary?.close) }}</template>
@@ -153,7 +162,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import { QuestionFilled } from '@element-plus/icons-vue'
 import type { ExecuteStrategyResponse, ExecutionSnapshot, StrategySelectionItem } from '@/api/strategies'
 import { executeStrategy, getLatestStrategyResult } from '@/api/strategies'
 import { eastMoneyQuoteUrl } from '@/utils/eastMoneyQuoteUrl'

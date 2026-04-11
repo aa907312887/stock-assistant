@@ -725,7 +725,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
-import { QuestionFilled } from '@element-plus/icons-vue'
 import {
   getBacktestBestOptions,
   getBacktestFilteredReport,

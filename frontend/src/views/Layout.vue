@@ -43,6 +43,7 @@
             <template #title>智能回测</template>
             <el-menu-item index="/backtest/history">历史回测</el-menu-item>
             <el-menu-item index="/backtest/simulation">历史模拟</el-menu-item>
+            <el-menu-item index="/paper-trading">历史模拟交易</el-menu-item>
           </el-sub-menu>
         </el-menu>
       </el-aside>

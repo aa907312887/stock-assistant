@@ -56,7 +56,6 @@
 
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
-import { QuestionFilled } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { listStrategies, type StrategySummary } from '@/api/strategies'
 import { getDataRange } from '@/api/backtest'

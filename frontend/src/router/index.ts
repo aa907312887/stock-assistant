@@ -80,6 +80,16 @@ const router = createRouter({
           name: 'backtest-simulation',
           component: () => import('@/views/HistorySimulationView.vue'),
         },
+        {
+          path: 'paper-trading',
+          name: 'paper-trading',
+          component: () => import('@/views/PaperTradingView.vue'),
+        },
+        {
+          path: 'paper-trading/:sessionId',
+          name: 'paper-trading-session',
+          component: () => import('@/views/PaperTradingSessionView.vue'),
+        },
       ],
     },
     { path: '/:pathMatch(.*)*', redirect: '/' },
