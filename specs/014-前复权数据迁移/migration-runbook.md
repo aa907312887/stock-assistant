@@ -4,8 +4,9 @@
 
 ## 1. 前置条件
 
-- 已完成代码发布：日线 `pro_bar` qfq、周/月 `stk_week_month_adj`、探测接口已上线。
-- `backend/.env`：`TUSHARE_TOKEN`、`ADMIN_SECRET` 有效。
+- 已完成代码发布：日线为 **`daily`（未复权）+ `adj_factor` → `stock_adj_factor` + 合成前复权 `stock_daily_bar`**；周/月为 **`stk_week_month_adj` 的 `*_qfq`**；管理端 `pro_bar`/`stk_week_month_adj` 探测仍可用于对照。
+- **存量库**：若尚无 `stock_adj_factor` 表，须先执行 `backend/scripts/add_stock_adj_factor.sql`（新建库可用 `reset_and_init_v3.sql` 一体建表）。
+- `backend/.env`：`TUSHARE_TOKEN`、`ADMIN_SECRET` 有效（`adj_factor` 与 `stk_week_month_adj` 均涉及积分门槛，见 Tushare 文档）。日线回灌：`TUSHARE_RATE_PAUSE_SEC_DAILY` 控制 `daily`/`adj_factor` 请求前休眠（默认约 `0.025` 秒/次）；`STOCK_DAILY_BACKFILL_WORKERS` 为并行线程数（默认 `4`）；`STOCK_DAILY_BACKFILL_DAILY_BATCH_SIZE` 为 `pro.daily` 多标的合并批大小（默认 `12`）。并发越高越容易触发限流，遇报错可适当**增大**休眠或**减小** `WORKERS`/`BATCH_SIZE`。
 - **MySQL 全库或逻辑备份**已完成，备份路径与责任人已记录。
 
 ## 2. 清空（仅行数据）
@@ -14,7 +15,7 @@
 mysql -u ... -p stock_assistant < backend/scripts/truncate_for_qfq_migration.sql
 ```
 
-**禁止**对业务库执行无备份的 `TRUNCATE`。若需保留 `sync_job_run` 审计，可先导出再 `TRUNCATE`。
+**禁止**对业务库执行无备份的 `TRUNCATE`。脚本会 `TRUNCATE stock_adj_factor`（须已建表，见 §1）。若需保留 `sync_job_run` 审计，可先导出再 `TRUNCATE`。
 
 ## 3. 回灌主路径
 

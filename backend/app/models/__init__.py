@@ -5,6 +5,7 @@ from app.models.portfolio_trade import PortfolioTrade
 from app.models.portfolio_trade_image import PortfolioTradeImage
 from app.models.stock_basic import StockBasic
 from app.models.stock_daily_bar import StockDailyBar
+from app.models.stock_adj_factor import StockAdjFactor
 from app.models.stock_financial_report import StockFinancialReport
 from app.models.stock_monthly_bar import StockMonthlyBar
 from app.models.stock_weekly_bar import StockWeeklyBar
@@ -31,6 +32,7 @@ __all__ = [
     "PortfolioTradeImage",
     "StockBasic",
     "StockDailyBar",
+    "StockAdjFactor",
     "StockFinancialReport",
     "StockMonthlyBar",
     "StockWeeklyBar",

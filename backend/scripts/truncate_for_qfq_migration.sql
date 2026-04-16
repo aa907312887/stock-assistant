@@ -18,6 +18,7 @@ TRUNCATE TABLE market_index_daily_quote;
 
 -- 行情与股票主档（历史累计高低在 stock_daily_bar.cum_hist_*，清空后须重跑极值任务）
 TRUNCATE TABLE stock_daily_bar;
+TRUNCATE TABLE stock_adj_factor;
 TRUNCATE TABLE stock_weekly_bar;
 TRUNCATE TABLE stock_monthly_bar;
 TRUNCATE TABLE stock_basic;

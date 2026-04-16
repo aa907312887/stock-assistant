@@ -3,7 +3,7 @@
 **功能分支**: `014-前复权数据迁移`  
 **创建日期**: 2026-03-28  
 **状态**: 草稿  
-**输入**: 用户描述：「数据全盘转换，从未复权到前复权：因前复权更利于分析，日、周、月数据、大盘温度、股票 basic 等全量删除数据（保留表结构），日、周、月行情统一使用前复权口径从数据源获取并落库。」补充：**日线**采用 Tushare [复权历史日行情 / 通用行情 `pro_bar`](https://tushare.pro/document/2?doc_id=109) 前复权（`qfq`）；**周/月线**采用 Tushare [复权历史周/月行情 `stk_week_month_adj`](https://tushare.pro/document/2?doc_id=365) 的前复权价字段；**凡基于上述行情在本系统内计算或派生的数据**（技术指标、历史极值、选股与温度等中间结果）须与原始行情一并清空，并在新行情就绪后**全量重算**。
+**输入**: 用户描述：「数据全盘转换，从未复权到前复权：因前复权更利于分析，日、周、月数据、大盘温度、股票 basic 等全量删除数据（保留表结构），日、周、月行情统一使用前复权口径从数据源获取并落库。」补充：**日线**以 Tushare [复权因子 `adj_factor`](https://tushare.pro/document/2?doc_id=28) 按日、按标的入库至独立表 **`stock_adj_factor`**，并与 [历史日线 `daily`（未复权）](https://tushare.pro/document/2?doc_id=27) 合并计算前复权 OHLC（锚定规则与仓库内 `daily`+`adj_factor` 单测一致：\(P_{qfq}=P_{raw}\times F_t/F_{anchor}\)，\(F_{anchor}\) 为锚定日及之前最近一条因子）；**周/月线**采用 Tushare [股票周/月线行情（复权—每日更新）`stk_week_month_adj`](https://tushare.pro/document/2?doc_id=365) 的 **`open_qfq`/`high_qfq`/`low_qfq`/`close_qfq`**；**凡基于上述行情在本系统内计算或派生的数据**（技术指标、历史极值、选股与温度等中间结果）须与原始行情一并清空，并在新行情就绪后**全量重算**。
 
 ## Clarifications
 
@@ -11,8 +11,17 @@
 
 - Q: Tushare 日线通用接口（`pro_bar`）无官方网页试单、主要依赖 SDK，接入正式同步前如何验证？ → A: **先在本系统内实现可 HTTP 调用的测试接口**（或项目约定的等价联调方式），用于验证 Token、请求参数与返回样例；**测试接口验收通过后**，再将相同调用逻辑纳入正式日线同步与落库路径。
 
-- **实现说明（2026-03-28）**：后端已落地——日线前复权**仅**使用 SDK `ts.pro_bar`（`adj='qfq'`），无其它合并回退路径；调用外加 `_tushare_pro_bar_pandas_compat`，将 pandas 2.2+ 不兼容的 `fillna(method='bfill')` 转发为 `.bfill()`；`pro_bar` 返回空或失败时抛 `TushareClientError`。**backfill** 时按约 **365 自然日（约一年）** 分块、块内对该段每个交易日拉全市场 `daily_basic`，再对每只股票**一次区间请求**拉取该年窗口内全部日线（`sync_daily_bars_backfill_range`，每标的查询后即 `commit`）；增量/单日仍用单日逐标的 `sync_daily_bars`。周/月使用 `stk_week_month_adj` 并将 `*_qfq` 映射入 `normalize_bar`；管理探测路由为 `GET /api/admin/tushare-probe/pro-bar-qfq` 与 `GET /api/admin/tushare-probe/stk-week-month-adj-qfq`；清空脚本见 `backend/scripts/truncate_for_qfq_migration.sql`，运维步骤见 `migration-runbook.md`。全量回灌与指标回填**推荐**使用 `python -m app.scripts.sync_stock` / `fill_stock_indicators`（与 `POST /api/admin/stock-sync`、`stock-indicators` 同源编排，本地脚本无需起 HTTP）。**日线 pro_bar** 请求间隔由 `TUSHARE_RATE_PAUSE_SEC_DAILY` 配置（默认约为全局 `TUSHARE_RATE_PAUSE_SEC` 的 1/3），与周/月等接口间隔独立可调。本地可执行 `python -m app.scripts.test_pro_bar_qfq --date YYYY-MM-DD` 验证前复权拉取。
-- **SC-006**：本地探测接口验收已于 2026-03-28 通过，记录见 `acceptance-probe.md`；生产库全量迁移（清空+回灌）仍按 `migration-runbook.md` 在维护窗口执行。
+- **实现说明（2026-03-28，日线口径已由 2026-04-14 修订）**：曾落地 SDK `ts.pro_bar`（`adj='qfq'`）作为日线唯一来源；**2026-04-14 起**日线主路径改为 **`daily`（未复权）+ `adj_factor` 入库 + 本地合成**（见下「Session 2026-04-14」）。`pro_bar` 仍保留于管理探测与对照脚本（如 `test_pro_bar_qfq_export`），**不再**作为生产日线落库唯一来源。周/月仍为 `stk_week_month_adj` 的 `*_qfq`；清空脚本含 `stock_adj_factor`，见 `truncate_for_qfq_migration.sql`；运维步骤见 `migration-runbook.md`。
+
+- **SC-006**：本地探测接口验收已于 2026-03-28 通过，记录见 `acceptance-probe.md`；`pro_bar` 探测可作为与 `daily`+`adj_factor` 结果的**对照**，生产库全量迁移（清空+回灌）仍按 `migration-runbook.md` 在维护窗口执行。
+
+### Session 2026-04-14
+
+- **修订动机**：此前若误用非「日线未复权 + 日复权因子」类接口，易导致与预期前复权口径不一致；本轮明确 **复权因子** 使用 Tushare [`adj_factor`](https://tushare.pro/document/2?doc_id=28)，**独立表** `stock_adj_factor` 持久化，日线 OHLC 由 **`daily` + 因子锚定合成** 写入 `stock_daily_bar`。
+- **周/月线**：继续使用 [`stk_week_month_adj`](https://tushare.pro/document/2?doc_id=365) 的 **`*_qfq`** 字段落库——与上述日线方案并列，均为前复权展示与分析口径。
+- **库表**：新建 `stock_adj_factor` 的 DDL 见 `backend/scripts/add_stock_adj_factor.sql`（存量库须执行后再跑清空/回灌）；`reset_and_init_v3.sql` 已含同结构建表。
+- **回灌性能（2026-04-14 后）**：日线 backfill 对每标的每自然年窗口仅拉「同窗口」的 `adj_factor`，`F_anchor` 由锚定交易日**一次**全市场 `adj_factor(trade_date)` 取得；段内不再预拉全部 `daily_basic`（改为写入时按日缓存），显著减少 Tushare 调用量与单次 payload。
+- **回灌吞吐（并发与批量）**：`daily` 支持多 `ts_code` 合并请求（`.env`：`STOCK_DAILY_BACKFILL_DAILY_BATCH_SIZE`）；同批标的可并行写库（`STOCK_DAILY_BACKFILL_WORKERS`，独立 DB Session）；`TUSHARE_RATE_PAUSE_SEC_DAILY` 默认已略调低，遇限流应调大或降低并发。
 
 ## 用户场景与测试 *（必填）*
 
@@ -73,18 +82,19 @@
 
 ### 功能要求
 
-- **FR-001**: 系统必须将**日、周、月**股票行情的数据获取与持久化统一为**前复权**口径，且与下列数据源约定一致：**日线**使用 Tushare 通用行情 [`pro_bar`](https://tushare.pro/document/2?doc_id=109)，复权参数为前复权（`qfq`）；**周线、月线**使用 Tushare [`stk_week_month_adj`](https://tushare.pro/document/2?doc_id=365)，持久化时采用该接口返回的**前复权价字段**（如 `open_qfq`、`high_qfq`、`low_qfq`、`close_qfq` 等，以接口文档为准）。不再使用未复权作为这些周期行情的主数据源。
+- **FR-001**: 系统必须将**日、周、月**股票行情的数据获取与持久化统一为**前复权**口径，且与下列数据源约定一致：**日线**使用 Tushare [**`adj_factor`（日复权因子）**](https://tushare.pro/document/2?doc_id=28) 写入独立表 **`stock_adj_factor`**，并与 [**`daily`（未复权日线）**](https://tushare.pro/document/2?doc_id=27) 按锚定公式合并后，将前复权 OHLC（及由价格推导的字段）写入 `stock_daily_bar`；**周线、月线**使用 Tushare [`stk_week_month_adj`](https://tushare.pro/document/2?doc_id=365)，持久化时采用该接口返回的**前复权价字段**（`open_qfq`、`high_qfq`、`low_qfq`、`close_qfq` 等，以接口文档为准）。**不得**在未写入/未对齐 `adj_factor` 的情况下，将未复权 `daily` 直接冒充前复权日线落库。
 - **FR-001a**: 凡在本系统中**以日/周/月行情为输入**计算、聚合或派生的数据（包括但不限于技术指标、历史高低价、选股与大盘温度相关的中间表与结果表），必须与原始行情**同步清空**，并在新前复权行情可用后执行**全量重算**；禁止在新行情落库后仍保留或增量修补旧口径下的计算结果。
 - **FR-002**: 系统必须在切换到前复权前，对约定范围内的业务数据执行**全量删除行级数据**，且**不得**对涉及的表执行 `DROP TABLE`；表结构、索引、约束等模式级对象保留。
 - **FR-003**: **大盘温度**功能所依赖的、存储在本系统中的相关数据必须纳入上述清空与按前复权重拉或重算的范围，保证展示与计算口径与全市场前复权行情一致。
 - **FR-004**: **股票 basic** 表必须按 FR-002 执行**全表行级清空**（不删表），随后由同步任务按前复权口径相关约定重新写入全量主数据与扩展字段，确保无未复权批次残留。
 - **FR-005**: 迁移完成后，系统应能通过抽样验收证明：日/周/月、大盘温度、股票 basic 约定范围内**不存在**仍以未复权为主数据源的写入路径（配置、任务、默认值等均指向前复权）。
 - **FR-006**: 必须提供可重复的迁移说明（步骤、顺序、回滚或再次清空的注意点），使运维或开发在类生产环境可复现，无需依赖口头传递。
-- **FR-007**: **日线接入门禁**：在将 Tushare [`pro_bar`](https://tushare.pro/document/2?doc_id=109)（`qfq`）用于**正式**日线同步与落库之前，必须先在本系统提供**测试接口**（建议为 HTTP，便于在无 Tushare 网页试单页的情况下联调），用于验证鉴权、参数与返回结构；**测试接口经确认通过后**，方可把该调用链接入生产同步路径。周/月线若同样仅有 SDK 路径，可沿用同一联调思路（测试接口或等价方式），具体在 `plan.md` 中列明。
+- **FR-007**: **日线接入门禁**：在将 **`daily`+`adj_factor` 合成路径**用于**正式**日线同步与落库之前，须验证 Tushare Token 对 [`daily`](https://tushare.pro/document/2?doc_id=27)、[`adj_factor`](https://tushare.pro/document/2?doc_id=28) 的权限与返回结构；历史上已通过 HTTP **`pro_bar`（qfq）探测**完成 SDK 联调的，可继续作为**对照**（与单测 `tests/test_pro_bar_qfq_export.py` 一致）。周/月线沿用 `stk_week_month_adj` 探测与正式链路，具体在 `plan.md` 中列明。
 
 ### 关键实体 *（若涉及数据则必填）*
 
-- **日/周/月 K 线原始行情表**：代表从 `pro_bar`（qfq）与 `stk_week_month_adj`（`*_qfq`）落库的各周期 OHLCV 等；为后续一切计算的唯一起算口径。
+- **日/周/月 K 线原始行情表**：日线代表由 **`daily`（未复权）与 `stock_adj_factor`（Tushare `adj_factor`）合成的前复权** OHLCV 等；周线、月线代表从 `stk_week_month_adj`（`*_qfq`）落库的 OHLCV 等；为后续一切计算的唯一起算口径。
+- **`stock_adj_factor`（日复权因子表）**：按标的、交易日存储 Tushare `adj_factor`，供日线前复权合成及按需本地重算；与 `stock_daily_bar` 一并纳入迁移清空与回灌范围。
 - **由行情派生的计算/指标表**：代表以 K 线为输入在本系统生成的均线、MACD、历史极值、选股中间结果等；须与 FR-001a 一并清空并重算。
 - **大盘温度相关数据**：代表全市场或指数层面的温度/情绪类指标及其依赖的中间结果；须与全市场前复权行情一致。
 - **股票 basic 及相关扩展**：代表股票主数据及与同步、扩展字段相关的记录；本轮删除行数据后按前复权同步策略重新填充约定字段。
@@ -99,12 +109,12 @@
 - **SC-003**: 核心依赖行情的功能（行情展示、依赖 K 线的选股/温度等）在重拉完成后 **可用性恢复**：抽样用户能在可接受时间内完成主要浏览与查询任务（具体时间目标在规划阶段按现有系统基线设定）。
 - **SC-004**: 书面迁移说明经独立执行人 **一次走通**即可完成清空与重拉主路径（允许环境与密钥差异，但步骤无歧义）。
 - **SC-005**: 重算任务完成后，抽样检查派生指标与手工按新前复权行情复核的结果**一致**，未发现仍引用旧批次或未复权源数据的记录。
-- **SC-006**: **日线测试门禁满足**：在启用正式日线前复权同步前，**日线测试接口**已完成联调并有可追溯的通过记录（如工单、检查表或发布说明中的勾选项）；未通过前不将 `pro_bar`（qfq）接入生产落库。
+- **SC-006**: **日线测试门禁满足**：在启用正式日线前复权同步前，已完成对 **`daily` + `adj_factor` + 合成公式** 的验证（可与 `pro_bar`（qfq）探测结果对照），并有可追溯记录；未验证前不将生产日线落库切换为未经验证的接口组合。
 
 ## 假设
 
-- **数据源（Tushare）**：[通用行情 `pro_bar`](https://tushare.pro/document/2?doc_id=109) 文档载明复权类型对股票的含义及与其他参数的配合方式；[周/月线复权 `stk_week_month_adj`](https://tushare.pro/document/2?doc_id=365) 同时给出未复权与 `*_qfq`/`*_hfq` 等字段，本系统周/月线落库以前复权字段为准。若未来数据源字段或权限变更，以接口文档与规划阶段契约为准。
-- **SDK 与试测方式**：Tushare 日线 `pro_bar` **无**类似部分接口的在线试单页面，集成主要依赖 SDK；因此**不以**「先网页点通再写代码」作为前置，而以本系统 **FR-007** 规定的测试接口联调作为接入前验证手段。
+- **数据源（Tushare）**：[`adj_factor`](https://tushare.pro/document/2?doc_id=28) 提供累计复权因子；[`daily`](https://tushare.pro/document/2?doc_id=27) 提供未复权 OHLCV；二者合并的前复权锚定口径与仓库内 `tests/test_pro_bar_qfq_export.py` 中「以区间内最后一交易日因子为锚」的说明一致（与部分行情终端展示可能仍有细微差异，以本规格锚定定义为准）。[`stk_week_month_adj`](https://tushare.pro/document/2?doc_id=365) 同时给出未复权与 `*_qfq`/`*_hfq` 等字段，本系统周/月线落库以前复权字段为准。若未来数据源字段或权限变更，以接口文档与规划阶段契约为准。
+- **SDK 与试测方式**：集成主要依赖 SDK；`pro_bar`（qfq）可作为对照探测，正式落库以 **`daily`+`adj_factor`** 为准。
 - **范围**：本轮以用户明确点名的**日/周/月行情、大盘温度、股票 basic** 为主；分钟线、tick、财务报表等若未在规划阶段纳入清单，则默认**不**自动清空，除非与未复权行情混存会产生错误——届时在 `plan.md` 或数据模型中显式列出追加范围。
 - **用户与操作者**：迁移由具备数据库与运维权限的角色执行；普通用户不直接执行清空，仅感知停机窗口或数据刷新延迟（若有）。
 - **财务与合规**：清空数据不包含用户隐私与账户类信息的额外删除要求；股票 basic 全表清空后依赖同步任务一次性恢复名单与元数据，与 `003-股票基本信息` 等规格中的字段含义保持一致。

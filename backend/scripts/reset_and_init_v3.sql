@@ -21,6 +21,7 @@ DROP TABLE IF EXISTS sync_job_run;
 DROP TABLE IF EXISTS stock_monthly_bar;
 DROP TABLE IF EXISTS stock_weekly_bar;
 DROP TABLE IF EXISTS stock_daily_bar;
+DROP TABLE IF EXISTS stock_adj_factor;
 DROP TABLE IF EXISTS stock_financial_report;
 DROP TABLE IF EXISTS stock_valuation_daily;
 DROP TABLE IF EXISTS stock_daily_tech;
@@ -159,6 +160,20 @@ CREATE TABLE stock_daily_bar (
   KEY idx_daily_trade_pe (trade_date, pe),
   KEY idx_daily_trade_pb (trade_date, pb)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='股票历史日线表';
+
+CREATE TABLE stock_adj_factor (
+  id            BIGINT         NOT NULL AUTO_INCREMENT COMMENT '主键',
+  stock_code    VARCHAR(20)    NOT NULL COMMENT 'ts_code',
+  trade_date    DATE           NOT NULL COMMENT '交易日',
+  adj_factor    DECIMAL(20,6)  NOT NULL COMMENT 'Tushare adj_factor',
+  sync_batch_id VARCHAR(64)    DEFAULT NULL COMMENT '同步批次',
+  synced_at     DATETIME       NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '同步时间',
+  created_at    DATETIME       NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  updated_at    DATETIME       NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_adj_factor_code_date (stock_code, trade_date),
+  KEY idx_adj_factor_trade_date (trade_date)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='股票日复权因子';
 
 CREATE TABLE stock_weekly_bar (
   id               BIGINT         NOT NULL AUTO_INCREMENT COMMENT '主键',

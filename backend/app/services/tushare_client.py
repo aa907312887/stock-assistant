@@ -154,7 +154,7 @@ def get_stock_list() -> list[dict[str, Any]]:
 def get_daily_by_trade_date(trade_date: date) -> dict[str, dict[str, Any]]:
     """
     指定交易日的全市场日线（**未复权**，`pro.daily`），键为 ts_code。
-    仅用于调试或旧脚本；**生产同步请使用** `get_pro_bar_qfq_for_trade_date` + `sync_daily_bars` 链路。
+    与 ``get_adj_factor_by_trade_date``、本地 ``stock_adj_factor`` 合并后写入前复权 ``stock_daily_bar``。
     """
     pro = _get_pro()
     last_err: Exception | None = None
@@ -170,6 +170,225 @@ def get_daily_by_trade_date(trade_date: date) -> dict[str, dict[str, Any]]:
             if attempt < MAX_RETRIES - 1:
                 time.sleep(RETRY_INTERVAL_SEC)
     raise TushareClientError(f"Tushare daily 失败: {last_err}") from last_err
+
+
+def get_adj_factor_by_trade_date(trade_date: date) -> dict[str, dict[str, Any]]:
+    """
+    指定交易日**全市场**复权因子（`pro.adj_factor(trade_date=…)`），键为 ts_code。
+    官方文档：<https://tushare.pro/document/2?doc_id=28>。
+    """
+    pro = _get_pro()
+    last_err: Exception | None = None
+    for attempt in range(MAX_RETRIES):
+        try:
+            _rate_pause()
+            df = pro.adj_factor(trade_date=trade_date.strftime("%Y%m%d"))
+            rows = _df_to_records(df)
+            return {str(r["ts_code"]): r for r in rows if r.get("ts_code")}
+        except Exception as e:
+            last_err = e
+            logger.warning("Tushare adj_factor 失败 attempt=%s error=%s", attempt + 1, e)
+            if attempt < MAX_RETRIES - 1:
+                time.sleep(RETRY_INTERVAL_SEC)
+    raise TushareClientError(f"Tushare adj_factor(trade_date) 失败: {last_err}") from last_err
+
+
+def fetch_adj_factor_range(
+    ts_code: str,
+    start_date: date,
+    end_date: date,
+) -> list[dict[str, Any]]:
+    """单标的区间复权因子，对应 ``pro.adj_factor``。"""
+    pro = _get_pro()
+    tc = ts_code.strip().upper()
+    if not tc:
+        raise TushareClientError("ts_code 为空")
+    sd = start_date.strftime("%Y%m%d")
+    ed = end_date.strftime("%Y%m%d")
+    last_err: Exception | None = None
+    for attempt in range(MAX_RETRIES):
+        try:
+            # 与日线未复权请求共用较短间隔，便于全市场回灌时提高吞吐（仍受 Tushare 账号限速约束）
+            _rate_pause_daily_pro_bar()
+            df = pro.adj_factor(ts_code=tc, start_date=sd, end_date=ed)
+            if df is None or (hasattr(df, "empty") and df.empty):
+                return []
+            return _df_to_records(df)
+        except Exception as e:
+            last_err = e
+            logger.warning(
+                "Tushare adj_factor 区间失败 attempt=%s ts_code=%s error=%s",
+                attempt + 1,
+                tc,
+                e,
+            )
+            if attempt < MAX_RETRIES - 1:
+                time.sleep(RETRY_INTERVAL_SEC)
+    raise TushareClientError(
+        f"Tushare adj_factor 区间失败 ts_code={tc} {sd}..{ed}: {last_err}"
+    ) from last_err
+
+
+def fetch_daily_unadjusted_range(
+    ts_code: str,
+    start_date: date,
+    end_date: date,
+    *,
+    limit: int | None = 8000,
+) -> list[dict[str, Any]]:
+    """单标的区间**未复权**日线（``pro.daily``），与 ``merge_daily_unadjusted_with_adj_factor_qfq`` 搭配。"""
+    pro = _get_pro()
+    tc = ts_code.strip().upper()
+    if not tc:
+        raise TushareClientError("ts_code 为空")
+    sd = start_date.strftime("%Y%m%d")
+    ed = end_date.strftime("%Y%m%d")
+    last_err: Exception | None = None
+    for attempt in range(MAX_RETRIES):
+        try:
+            _rate_pause_daily_pro_bar()
+            df = pro.daily(ts_code=tc, start_date=sd, end_date=ed, limit=limit)
+            if df is None or (hasattr(df, "empty") and df.empty):
+                return []
+            return _df_to_records(df)
+        except Exception as e:
+            last_err = e
+            logger.warning(
+                "Tushare daily(未复权) 区间失败 attempt=%s ts_code=%s error=%s",
+                attempt + 1,
+                tc,
+                e,
+            )
+            if attempt < MAX_RETRIES - 1:
+                time.sleep(RETRY_INTERVAL_SEC)
+    raise TushareClientError(
+        f"Tushare daily(未复权) 区间失败 ts_code={tc} {sd}..{ed}: {last_err}"
+    ) from last_err
+
+
+def fetch_daily_unadjusted_batch(
+    ts_codes: list[str],
+    start_date: date,
+    end_date: date,
+    *,
+    limit: int | None = 8000,
+) -> dict[str, list[dict[str, Any]]]:
+    """
+    多标的合并请求 ``pro.daily``（逗号分隔 ``ts_code``），返回 ``ts_code -> 行列表``。
+    见 `Tushare A股日线 <https://tushare.pro/document/2?doc_id=27>`_；单次返回有行数上限，批量不宜过大。
+    """
+    parts = [c.strip().upper() for c in ts_codes if c and str(c).strip()]
+    if not parts:
+        return {}
+    pro = _get_pro()
+    tc = ",".join(parts)
+    sd = start_date.strftime("%Y%m%d")
+    ed = end_date.strftime("%Y%m%d")
+    last_err: Exception | None = None
+    for attempt in range(MAX_RETRIES):
+        try:
+            _rate_pause_daily_pro_bar()
+            df = pro.daily(ts_code=tc, start_date=sd, end_date=ed, limit=limit)
+            if df is None or (hasattr(df, "empty") and df.empty):
+                return {}
+            rows = _df_to_records(df)
+            by_code: dict[str, list[dict[str, Any]]] = {}
+            for r in rows:
+                k = str(r.get("ts_code") or "").strip().upper()
+                if not k:
+                    continue
+                by_code.setdefault(k, []).append(r)
+            for k, lst in by_code.items():
+                lst.sort(
+                    key=lambda x: str(x.get("trade_date") or "").replace("-", "")[:8],
+                )
+            return by_code
+        except Exception as e:
+            last_err = e
+            logger.warning(
+                "Tushare daily(未复权) 批量失败 attempt=%s n=%s codes_sample=%s error=%s",
+                attempt + 1,
+                len(parts),
+                parts[:3],
+                e,
+            )
+            if attempt < MAX_RETRIES - 1:
+                time.sleep(RETRY_INTERVAL_SEC)
+    raise TushareClientError(
+        f"Tushare daily(未复权) 批量失败 n={len(parts)} {sd}..{ed}: {last_err}"
+    ) from last_err
+
+
+def merge_daily_unadjusted_with_adj_factor_qfq(
+    daily_records: list[dict[str, Any]],
+    adj_records: list[dict[str, Any]],
+    *,
+    anchor_end: date,
+    anchor_adj_factor: float | None = None,
+) -> list[dict[str, Any]]:
+    """
+    将未复权 ``daily`` 与 ``adj_factor`` 合并为前复权 OHLC 行（与单测 ``test_pro_bar_qfq_export`` 锚定思路一致）::
+
+        P_qfq = P_raw * F_t / F_anchor
+
+    ``F_anchor`` 的确定方式：
+
+    - 若传入 ``anchor_adj_factor``（通常为回灌区间结束日、全市场一次拉取的该标的因子），则**直接使用**，
+      此时 ``adj_records`` 仅需覆盖 ``daily`` 各交易日所在区间（用于各日 ``F_t``），回灌性能最好。
+    - 否则自 ``adj_records`` 中取**最后一个交易日不超过 anchor_end** 的 ``adj_factor`` 作为 ``F_anchor``（兼容旧调用）。
+
+    各日 ``F_t`` 由按 ``trade_date`` 对齐后对 ``adj_factor`` 做 ffill/bfill 得到。
+    成交量、额保持 ``daily`` 原值；``change``/``pct_chg`` 按复权后的 close/pre_close 重算。
+    """
+    if not daily_records:
+        return []
+    if not adj_records:
+        raise TushareClientError("merge_daily_unadjusted_with_adj_factor_qfq: adj_records 为空")
+
+    d = pd.DataFrame(daily_records)
+    a = pd.DataFrame(adj_records)
+    d["_td"] = pd.to_datetime(d["trade_date"], errors="coerce").dt.strftime("%Y%m%d")
+    a["_td"] = pd.to_datetime(a["trade_date"], errors="coerce").dt.strftime("%Y%m%d")
+    a = a.sort_values("_td").dropna(subset=["_td"])
+    if anchor_adj_factor is not None:
+        f_end = float(anchor_adj_factor)
+        if f_end <= 0:
+            raise TushareClientError(f"传入的 F_anchor 无效: {f_end}")
+    else:
+        anchor_str = anchor_end.strftime("%Y%m%d")
+        sub_a = a[a["_td"] <= anchor_str]
+        if sub_a.empty:
+            raise TushareClientError(
+                f"adj_factor 在 anchor_end={anchor_end} 之前无数据，无法确定 F_anchor"
+            )
+        f_end = float(sub_a.iloc[-1]["adj_factor"])
+        if f_end <= 0:
+            raise TushareClientError(f"F_anchor 无效: {f_end}")
+
+    d = d.sort_values("_td").reset_index(drop=True)
+    m = d.merge(a[["_td", "adj_factor"]], on="_td", how="left", sort=False)
+    m["adj_f"] = pd.to_numeric(m["adj_factor"], errors="coerce").ffill().bfill()
+    if m["adj_f"].isna().any():
+        raise TushareClientError("合并后仍存在缺失的 adj_factor，无法计算前复权价")
+
+    ratio = m["adj_f"].astype(float) / f_end
+    price_cols = [c for c in ("open", "high", "low", "close", "pre_close") if c in m.columns]
+    out = m.copy()
+    for c in price_cols:
+        out[c] = pd.to_numeric(out[c], errors="coerce") * ratio
+
+    oc = out
+    if "close" in oc.columns and "pre_close" in oc.columns:
+        c = pd.to_numeric(oc["close"], errors="coerce")
+        pc = pd.to_numeric(oc["pre_close"], errors="coerce")
+        oc["change"] = c - pc
+        denom = pc.replace(0, pd.NA)
+        oc["pct_chg"] = ((c - pc) / denom) * 100.0
+
+    drop_cols = [c for c in ("_td", "adj_factor", "adj_f") if c in oc.columns]
+    oc = oc.drop(columns=drop_cols, errors="ignore")
+    records = json.loads(oc.to_json(orient="records", date_format="iso"))
+    return [dict(r) for r in records]
 
 
 @contextmanager

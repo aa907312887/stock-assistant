@@ -12,7 +12,7 @@
 
 ## 概要
 
-将本地股票行情从**未复权**全面切换为 **Tushare 前复权**口径：**日线**改用 `pro_bar` + `qfq`；**周/月线**改用 `stk_week_month_adj` 的 `*_qfq` 字段写入既有 `stock_weekly_bar` / `stock_monthly_bar`。迁移前对约定表**仅删行、不删表**，并清空所有依赖 K 线的派生数据（指标、大盘温度、策略输出、历史极值等），再按「先探测接口验收 → 再全量回灌 → 再重算」顺序恢复。实现上主要改动 **`backend/app/services/tushare_client.py`**、各 Bar 同步服务、编排器与可选 **SQL 清空脚本**；新增 **管理端 HTTP 探测接口** 满足 FR-007。
+将本地股票行情从**未复权**全面切换为 **Tushare 前复权**口径：**日线**为 **`daily`（未复权）+ `adj_factor` → `stock_adj_factor` + 本地合成** 写入 `stock_daily_bar`；**周/月线**仍为 `stk_week_month_adj` 的 `*_qfq` 写入 `stock_weekly_bar` / `stock_monthly_bar`。迁移前对约定表**仅删行、不删表**（含 `stock_adj_factor`），并清空派生数据，再按「先联调/探测 → 再全量回灌 → 再重算」恢复。`pro_bar`（qfq）探测保留作对照。
 
 ---
 
@@ -24,7 +24,7 @@
 - **测试**: pytest（`backend/tests/`）
 - **目标平台**: 本地/服务器 Linux 或 macOS，浏览器访问前端（本功能以后端与数据为主）
 - **项目类型**: Web 后端 + 定时任务 + 管理 HTTP 接口
-- **性能目标**: 全市场回灌耗时显著高于现状（因 `pro_bar` 按标的请求）；以**可完成**与**不触发 Tushare 限流**为首要目标，具体批次大小在实现中调参并记录
+- **性能目标**：回灌为每标的每窗口 `daily` + `adj_factor` 各一次区间请求（约 2× 原 `pro_bar` 调用量量级），以**可完成**与**不触发 Tushare 限流**为首要目标；增量日全市场 `daily`/`adj_factor` 各 1 次按日接口，通常优于逐标的 `pro_bar`
 - **约束**: Tushare 积分与 QPS/调用频率；`stk_week_month_adj` 单次 ≤6000 行需分段
 - **规模/范围**: A 股全市场约数千标的 × 历史交易日（回灌），周/月批量接口按日切批
 
@@ -44,10 +44,11 @@
 
 ```text
 [Tushare]
-  pro_bar(qfq) ──────────────► stock_daily_bar（OHLC 前复权）+ daily_basic 合并同行
-  stk_week_month_adj(*_qfq) ► stock_weekly_bar / stock_monthly_bar
-  stock_basic ─────────────► stock_basic（清空后全量）
-  index_daily 等 ──────────► market_index_* → 大盘温度重算
+  daily(未复权) + adj_factor ─► stock_adj_factor + 合成前复权 OHLC ─► stock_daily_bar
+  daily_basic ───────────────► stock_daily_bar（估值/换手等同行）
+  stk_week_month_adj(*_qfq) ──► stock_weekly_bar / stock_monthly_bar
+  stock_basic ───────────────► stock_basic（清空后全量）
+  index_daily 等 ────────────► market_index_* → 大盘温度重算
 
 [本系统编排]
   run_stock_sync / sync_task_runner
@@ -59,10 +60,10 @@
 
 **后端职责**：
 
-- 封装 `pro_bar`：入参 `ts_code`、`start_date`、`end_date`、`freq='D'`、`adj='qfq'`，解析为与 `normalize_bar` 兼容的结构（列名与 `daily` 一致化后再走现有 `normalize_bar`）。
+- 封装 `daily` 区间与 `adj_factor` 区间拉取；`merge_daily_unadjusted_with_adj_factor_qfq` 产出与 `normalize_bar` 兼容的日线行；`stock_adj_factor` 与 `stock_daily_bar` 同步写入。
 - 封装 `stk_week_month_adj`：在 `normalize_bar` 之前将 `open_qfq` 等映射为 `open`/`high`/`low`/`close`，再统一单位换算（成交量额与现逻辑一致）。
-- **日线全市场某日同步**：由「当日 + 全 `codes` 列表」循环 `pro_bar`（每代码单日可缩为 `start_date=end_date=trade_date`），合并 `daily_basic`；失败重试与限速沿用 `tushare_client` 模式。
-- **周/月**：将 `get_stk_weekly_monthly_by_trade_date` 系列改为调用 `pro.stk_week_month_adj`（方法名以 SDK 为准），`freq=week|month`，字段取 qfq。
+- **日线全市场某日同步**：`daily(trade_date)` + `adj_factor(trade_date)` 各一次，再按标的合并；缺因子标的跳过日线写入。
+- **周/月**：`get_stk_weekly_monthly_by_trade_date` 调用 `pro.stk_week_month_adj`，`freq=week|month`，字段取 qfq。
 
 **前端职责**：本阶段**无必须 UI 变更**；若需在「同步监控」页展示新批次说明，可后续迭代。
 

@@ -92,7 +92,7 @@ def _fill_indicators_safe_orchestrator(
 
 # 未显式指定 modules 时的默认：与定时任务 sync_task（AUTO_TASK_TYPES）一致——
 # basic → daily → weekly → monthly；各周期行情写入成功后同编排内会填充该周期均线/MACD。
-# 行情数据来源已统一为前复权（日线 `pro_bar` qfq，周/月 `stk_week_month_adj`）。
+# 行情数据来源已统一为前复权（日线 `daily`+`adj_factor` 合成，周/月 `stk_week_month_adj`）。
 # 财报 financial 仍须显式传入 modules。
 DEFAULT_MODULES = ["basic", "daily", "weekly", "monthly"]
 

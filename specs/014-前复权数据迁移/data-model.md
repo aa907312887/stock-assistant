@@ -8,7 +8,8 @@
 
 | 表 | 变更说明 |
 |----|----------|
-| `stock_daily_bar` | `open`/`high`/`low`/`close`/`prev_close` 及由价格推导的涨跌幅类字段，语义统一为 **Tushare `pro_bar` + `qfq` 前复权**；`daily_basic` 来源的换手率、市值、PE 等**非 OHLC** 字段仍为当日全市场指标，与复权无冲突。 |
+| `stock_adj_factor` | 存储 Tushare [`adj_factor`](https://tushare.pro/document/2?doc_id=28) 返回的 **`adj_factor`**（按 `stock_code`+`trade_date` 唯一）；为日线前复权合成的权威因子序列，可按需用于本地重算或校验。 |
+| `stock_daily_bar` | `open`/`high`/`low`/`close`/`prev_close` 及由价格推导的涨跌幅类字段，语义统一为 **未复权 `daily` 与 `stock_adj_factor` 按锚定公式合成的前复权价**；`daily_basic` 来源的换手率、市值、PE 等**非 OHLC** 字段仍为当日全市场指标，与复权无冲突。 |
 | `stock_weekly_bar` / `stock_monthly_bar` | OHLC 为 **`stk_week_month_adj` 的 `*_qfq`**；`vol`/`amount` 等同接口原文。 |
 | `stock_basic` | 规格要求**全表行删除后重拉** `stock_basic`（`stock_basic` 接口）；历史累计极值在 **`stock_daily_bar.cum_hist_*`**，清空日线后须跑历史极值全量任务。 |
 
@@ -22,6 +23,7 @@
 |------|------|----------------|------|
 | 股票主档 | `stock_basic` | `id`，`code` UNIQUE | 清空后由 `stock_basic` 同步重灌 |
 | 日线 | `stock_daily_bar` | `id`，`(stock_code, trade_date)` UNIQUE | 含指标列 ma/macd，清空后回灌 + `fill_indicators_*` |
+| 日复权因子 | `stock_adj_factor` | `id`，`(stock_code, trade_date)` UNIQUE | 与日线一并清空；回灌时随日线同步写入 |
 | 周线 | `stock_weekly_bar` | `id`，`(stock_code, trade_week_end)` UNIQUE | 同上 |
 | 月线 | `stock_monthly_bar` | `id`，`(stock_code, trade_month_end)` UNIQUE | 同上 |
 | 大盘温度 | `market_temperature_daily` | 见模型 | 清空后按指数日线重算 |
@@ -66,4 +68,4 @@
 - 配置表键值，或  
 - `stock_daily_bar.data_source` 仍用 `tushare`，在 `extra_json`（若将来扩展）中记录 `price_adjust=qfq`  
 
-**默认**：不写新列也可，以代码与文档约定 `pro_bar`/`qfq` 为准。
+**默认**：不写新列也可，以代码与文档约定 **`daily`+`adj_factor` 合成前复权** 及周月 `stk_week_month_adj`/`qfq` 为准。
