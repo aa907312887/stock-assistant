@@ -1,4 +1,4 @@
-"""APScheduler：交易日 17:00 股票数据同步；17:10/启动后大盘温度；17:20 冲高回落与恐慌回落战法自动选股落库。
+"""APScheduler：交易日 17:00 股票数据同步；17:10/启动后大盘温度；17:20–17:21 若干策略自动选股落库（含红三兵 di_wei_lian_yang）。
 
 历史累计高低（``cum_hist_*``）在日线写入流程内递推更新，无单独定时任务。
 """
@@ -35,6 +35,8 @@ _JOB_STRATEGY_CGHL = "strategy_chong_gao_hui_luo_daily"
 _JOB_STRATEGY_PANIC = "strategy_panic_pullback_daily"
 _JOB_STRATEGY_BCB = "strategy_bottom_consolidation_breakout_daily"
 _JOB_STRATEGY_ZCSZX = "strategy_zao_chen_shi_zi_xing_daily"
+_JOB_STRATEGY_DWLY = "strategy_di_wei_lian_yang_daily"
+_JOB_STRATEGY_DWLY = "strategy_di_wei_lian_yang_daily"
 
 _scheduler: BackgroundScheduler | None = None
 CRON_HOUR = 17
@@ -215,6 +217,33 @@ def _job_strategy_zao_chen_shi_zi_xing_daily() -> None:
         db.close()
 
 
+def _job_strategy_di_wei_lian_yang_daily() -> None:
+    """定时任务：交易日每日 17:21（上海时区）筛选「红三兵」当日候选并落库（strategy_id=di_wei_lian_yang）。"""
+    today = date.today()
+    latest = get_latest_open_trade_date(today)
+    if latest is None or latest != today:
+        logger.info("红三兵定时筛选跳过：今日非交易日（最近开市日=%s）", latest)
+        return
+
+    db = SessionLocal()
+    try:
+        execute_strategy(db, strategy_id="di_wei_lian_yang", as_of_date=today)
+        logger.info("红三兵定时筛选完成 as_of_date=%s", today)
+    except StrategyDataNotReadyError as e:
+        logger.info("红三兵定时筛选跳过：数据未就绪 as_of_date=%s reason=%s", today, e)
+    except Exception as e:
+        log_scheduled_job_failure(
+            logger,
+            job_id=_JOB_STRATEGY_DWLY,
+            scheduler_entry="app.core.scheduler._job_strategy_di_wei_lian_yang_daily",
+            business_callable="app.services.strategy.strategy_execute_service.execute_strategy",
+            external_api=None,
+            exc=e,
+        )
+    finally:
+        db.close()
+
+
 def _mark_stale_running_jobs_failed() -> None:
     """将长时间停留在 running 的记录标为失败，避免进程中断后页面永远显示运行中。"""
     db = SessionLocal()
@@ -285,6 +314,12 @@ def start_scheduler() -> None:
         _job_strategy_zao_chen_shi_zi_xing_daily,
         trigger=CronTrigger(hour=17, minute=20, timezone=TIMEZONE),
         id=_JOB_STRATEGY_ZCSZX,
+        replace_existing=True,
+    )
+    _scheduler.add_job(
+        _job_strategy_di_wei_lian_yang_daily,
+        trigger=CronTrigger(hour=17, minute=21, timezone=TIMEZONE),
+        id=_JOB_STRATEGY_DWLY,
         replace_existing=True,
     )
     _scheduler.start()

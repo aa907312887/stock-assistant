@@ -66,6 +66,11 @@ const router = createRouter({
           component: () => import('@/views/ZaoChenShiZiXingView.vue'),
         },
         {
+          path: 'strategy/di-wei-lian-yang',
+          name: 'strategy-di-wei-lian-yang',
+          component: () => import('@/views/DiWeiLianYangView.vue'),
+        },
+        {
           path: 'strategy/pe-value-investment',
           name: 'strategy-pe-value-investment',
           component: () => import('@/views/PeValueInvestmentView.vue'),

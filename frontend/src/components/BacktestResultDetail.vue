@@ -436,7 +436,7 @@
               <template #header>
                 <span>触发日</span>
                 <el-tooltip
-                  content="形态或信号触发日（如曙光初现的阳线日、早晨十字星的第三根阳线日），可能与买入日不同"
+                  content="形态或信号触发日（如曙光初现的阳线日、早晨十字星第三根阳线日、红三兵三连阳最后一日 T）；红三兵买入多为 T+1 开盘价，可能与触发日相差一日"
                   placement="top"
                 >
                   <el-icon class="hint-icon-sm"><QuestionFilled /></el-icon>
@@ -460,7 +460,7 @@
                 <el-tooltip placement="top">
                   <template #content>
                     <div style="max-width: 280px">
-                      已平仓：单笔收益率相对买入价。止损/止盈阈值因策略而异（如曙光初现约−10%、早晨十字星约−8%；止盈多为收盘≥买入×1.10 的当日收盘价），以离场原因为准。
+                      已平仓：单笔收益率相对买入价。止损因策略而异（如曙光初现约−10%、早晨十字星/红三兵约−8%）；止盈在早晨十字星与红三兵多为「涨幅≥15%后从最高价回落约5%」按当日收盘价，曙光初现等策略可能仍为固定比例止盈；以离场原因为准。
                     </div>
                   </template>
                   <el-icon class="hint-icon-sm"><QuestionFilled /></el-icon>
@@ -483,7 +483,7 @@
             <el-table-column width="120">
               <template #header>
                 <span>离场</span>
-                <el-tooltip content="止损比例因策略而异（如−10%或−8%）；止盈多为收盘≥买入×1.10 按当日收盘价。详见离场原因。" placement="top">
+                <el-tooltip content="止损比例因策略而异（如−10%或−8%）；移动止盈策略以收盘曾达买入×1.15后从最高价回落约5% 等规则为准。详见离场原因。" placement="top">
                   <el-icon class="hint-icon-sm"><QuestionFilled /></el-icon>
                 </el-tooltip>
               </template>

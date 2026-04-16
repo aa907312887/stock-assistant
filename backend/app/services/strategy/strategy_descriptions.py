@@ -61,6 +61,18 @@ stop_loss_pct=0.10, arm_profit_pct=0.10""",
 
 【关键参数】
 stop_loss_pct=0.08, arm_profit_trigger_pct=0.15, trailing_stop_pct=0.05""",
+    "di_wei_lian_yang": """【买入条件】
+- 红三兵：T-2、T-1、T 三连阳线；每日实体涨幅1%～5%（相对开盘）；上影线、下影线各占全日振幅(high-low)的比例均≤25%；收盘三连升；T-1与T日开盘相对前一日收盘高开不超过1%（T-1开盘≤T-2收盘×1.01，T开盘≤T-1收盘×1.01）
+- 股价不太高：收盘≤历史最高价的50%；若MA60有效则收盘<MA60
+- 温和放量：第三根阳线成交量≥前5个交易日(T-7至T-3)均量×1.1
+- 入场：T+1日以开盘价买入
+
+【卖出条件】
+- 止损：收盘≤买入价×0.92 → 固定按买入价×0.92卖出（亏损8%）
+- 移动止盈：涨幅≥15%后启动追踪，从最高价回落≥5% → 当日收盘价卖出
+
+【关键参数】
+stop_loss_pct=0.08, arm_profit_trigger_pct=0.15, trailing_stop_pct=0.05, min_yang_body_pct=0.01, max_small_yang_body_pct=0.05, max_shadow_to_range=0.25, max_open_gap_up_pct=0.01, max_close_to_cum_hist_high_ratio=0.5, volume_surge_ratio=1.1""",
     "pe_zao_chen_shi_zi_xing": """【买入条件】
 - 早晨十字星形态：T-2大阴(跌≥2%) + T-1锤头线(相对T-2涨跌≤1%) + T阳线(实体≥3%)
 - 跌势结构：MA5<MA10<MA20，收盘<MA20
