@@ -33,6 +33,20 @@ consolidation_days=15, consolidation_range=0.02, stop_loss_pct=0.02, profit_moni
 
 【关键参数】
 low_position_ratio=2/3, low_open_pct=0.02, profit_pct=0.05, stop_loss_pct=0.05, volume_ratio=1.5""",
+    "ma60_slope_buy": """【买入条件】
+- MA60斜率：s(i)=当日ma60−前一日ma60（库表字段差分）
+- 信号日：s(i−3)、s(i−2)、s(i−1)均<0；s(i)>0（斜率为0不满足）
+- 信号日当日：MA5>MA10>MA20（多头排列，表字段）
+- 买入：信号日下一交易日开盘价；触发日（trigger_date）为信号日
+
+【卖出条件】
+- 监测价：买入后逐日收盘价相对买入价（买入价为次日开盘价）
+- 止损：收盘≤买入价×0.92 → 按该日收盘价卖出（亏损8%）
+- 止盈：收盘≥买入价×1.15 → 按该日收盘价卖出（盈利15%）
+- 同日判定顺序：先止损后止盈
+
+【关键参数】
+take_profit_pct=0.15, stop_loss_pct=0.08""",
     "shu_guang_chu_xian": """【买入条件】
 - 形态：前一日阴线跌幅≥3% + 当日阳线实体≥3%
 - 跌势结构：MA5<MA10<MA20，收盘<MA20

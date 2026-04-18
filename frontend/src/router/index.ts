@@ -56,6 +56,11 @@ const router = createRouter({
           component: () => import('@/views/MAGoldenCrossView.vue'),
         },
         {
+          path: 'strategy/ma60-slope-buy',
+          name: 'strategy-ma60-slope-buy',
+          component: () => import('@/views/Ma60SlopeBuyView.vue'),
+        },
+        {
           path: 'strategy/da-yang-hui-luo',
           name: 'strategy-da-yang-hui-luo',
           component: () => import('@/views/DaYangHuiLuoView.vue'),
