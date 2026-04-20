@@ -11,7 +11,9 @@ from sqlalchemy.orm import Session
 from app.models.backtest_task import BacktestTask
 from app.models.backtest_trade import BacktestTrade as BacktestTradeModel
 from app.models.market_temperature_daily import MarketTemperatureDaily
+from app.models.index_basic import IndexBasic
 from app.models.stock_basic import StockBasic
+from app.services.backtest.backtest_context import reset_backtest_symbols, set_backtest_symbols
 from app.services.backtest.backtest_report import (
     calculate_exchange_stats,
     calculate_market_stats,
@@ -67,6 +69,16 @@ def enrich_trades_with_stock_dimension(db: Session, trades: list[BacktestTrade])
     )
     info_map = {r.code: (r.exchange, r.market) for r in rows}
 
+    rows_ix = (
+        db.query(IndexBasic.ts_code, IndexBasic.market)
+        .filter(IndexBasic.ts_code.in_(codes))
+        .all()
+    )
+    for r in rows_ix:
+        # 指数：exchange 填空，market 用 publisher/market 文本便于报表维度展示
+        if r.ts_code not in info_map:
+            info_map[r.ts_code] = (None, r.market)
+
     enriched = []
     for trade in trades:
         exchange, market = info_map.get(trade.stock_code, (None, None))
@@ -86,6 +98,7 @@ def run_backtest(
     end_date: date,
     position_amount: float = 100_000.0,
     reserve_amount: float = 100_000.0,
+    symbols: list[str] | None = None,
 ) -> None:
     """后台线程中执行的回测主流程。"""
     task = db.query(BacktestTask).filter(BacktestTask.task_id == task_id).one()
@@ -98,9 +111,20 @@ def run_backtest(
         if strategy is None:
             raise ValueError(f"策略不存在: {strategy_id}")
 
-        logger.info("回测开始: task_id=%s, strategy=%s, %s ~ %s", task_id, strategy_id, start_date, end_date)
+        logger.info(
+            "回测开始: task_id=%s, strategy=%s, %s ~ %s symbols=%s",
+            task_id,
+            strategy_id,
+            start_date,
+            end_date,
+            symbols or [],
+        )
 
-        result = strategy.backtest(start_date=start_date, end_date=end_date)
+        ctx_tok = set_backtest_symbols(symbols)
+        try:
+            result = strategy.backtest(start_date=start_date, end_date=end_date)
+        finally:
+            reset_backtest_symbols(ctx_tok)
 
         enriched_trades = enrich_trades_with_temperature(db, result.trades)
         enriched_trades = enrich_trades_with_stock_dimension(db, enriched_trades)
@@ -203,6 +227,8 @@ def run_backtest(
         assumptions_base["portfolio_capital"] = portfolio_summary.to_json_dict()
         assumptions_base["strategy_raw_closed_count"] = portfolio_summary.strategy_raw_closed_count
         assumptions_base["portfolio_skipped_closed_count"] = portfolio_summary.skipped_closed_count
+        if symbols:
+            assumptions_base["backtest_symbols"] = list(symbols)
 
         task.assumptions_json = assumptions_base
         task.finished_at = datetime.now()

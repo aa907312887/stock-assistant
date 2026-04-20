@@ -14,8 +14,12 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.database import SessionLocal, get_db
+from app.db_table_check import db_has_table
 from app.models.backtest_task import BacktestTask
 from app.models.backtest_trade import BacktestTrade as BacktestTradeModel
+from app.models.index_basic import IndexBasic
+from app.models.index_daily_bar import IndexDailyBar
+from app.models.stock_basic import StockBasic
 from app.models.stock_daily_bar import StockDailyBar
 from app.schemas.backtest import (
     BacktestBestOptionItem,
@@ -49,6 +53,91 @@ from app.services.trade_query_metrics import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/backtest", tags=["backtest"])
+
+# 允许带 symbols 限定标的回测的策略（策略内需读取 backtest_context）
+_BACKTEST_SYMBOLS_STRATEGY_IDS = frozenset({"ma_golden_cross"})
+
+
+def _combined_trade_calendar_bounds(db: Session) -> tuple[date | None, date | None]:
+    """个股与指数日线并集的交易日期范围（便于回测选区间）。"""
+    ms = db.query(func.min(StockDailyBar.trade_date)).scalar()
+    xs = db.query(func.max(StockDailyBar.trade_date)).scalar()
+    mi = xi = None
+    if db_has_table(db, "index_daily_bar"):
+        mi = db.query(func.min(IndexDailyBar.trade_date)).scalar()
+        xi = db.query(func.max(IndexDailyBar.trade_date)).scalar()
+    lows = [x for x in (ms, mi) if x is not None]
+    highs = [x for x in (xs, xi) if x is not None]
+    if not lows or not highs:
+        return None, None
+    return min(lows), max(highs)
+
+
+def _validate_and_normalize_backtest_symbols(db: Session, body: RunBacktestRequest) -> list[str]:
+    """非空 symbols 时校验标的存在于 stock_basic/index_basic，且区间内均有行情；仅允许已适配策略。"""
+    raw = body.symbols or []
+    if not raw:
+        return []
+    if body.strategy_id not in _BACKTEST_SYMBOLS_STRATEGY_IDS:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "SYMBOLS_NOT_SUPPORTED",
+                "message": "当前仅「均线金叉」策略支持填写回测标的；其它策略请留空以全市场回测。",
+            },
+        )
+    from app.services.index_pe_percentile_service import normalize_ts_code
+
+    syms = list(dict.fromkeys(normalize_ts_code(s) for s in raw if (s or "").strip()))
+    index_codes: list[str] = []
+    stock_codes: list[str] = []
+    index_basic_ready = db_has_table(db, "index_basic")
+    for s in syms:
+        if index_basic_ready and db.query(IndexBasic.ts_code).filter(IndexBasic.ts_code == s).first():
+            index_codes.append(s)
+        elif db.query(StockBasic.code).filter(StockBasic.code == s).first():
+            stock_codes.append(s)
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail={"code": "SYMBOL_UNKNOWN", "message": f"未找到股票或指数基础信息: {s}"},
+            )
+    if index_codes and stock_codes:
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "SYMBOLS_MIXED", "message": "同一回测任务不可混合个股与指数标的，请分开回测。"},
+        )
+    for s in index_codes:
+        n = (
+            db.query(func.count(IndexDailyBar.id))
+            .filter(
+                IndexDailyBar.index_code == s,
+                IndexDailyBar.trade_date >= body.start_date,
+                IndexDailyBar.trade_date <= body.end_date,
+            )
+            .scalar()
+        )
+        if not n:
+            raise HTTPException(
+                status_code=400,
+                detail={"code": "INDEX_NO_BAR", "message": f"指数 {s} 在所选日期区间内无日线数据"},
+            )
+    for s in stock_codes:
+        n = (
+            db.query(func.count(StockDailyBar.id))
+            .filter(
+                StockDailyBar.stock_code == s,
+                StockDailyBar.trade_date >= body.start_date,
+                StockDailyBar.trade_date <= body.end_date,
+            )
+            .scalar()
+        )
+        if not n:
+            raise HTTPException(
+                status_code=400,
+                detail={"code": "STOCK_NO_BAR", "message": f"股票 {s} 在所选日期区间内无日线数据"},
+            )
+    return syms
 
 
 def _generate_task_id(strategy_id: str, start_date: date, end_date: date) -> str:
@@ -114,8 +203,7 @@ def api_run_backtest(body: RunBacktestRequest, db: Session = Depends(get_db)):
     if body.start_date >= body.end_date:
         raise HTTPException(status_code=400, detail={"code": "INVALID_PARAMS", "message": "开始日期必须早于结束日期"})
 
-    min_date_row = db.query(func.min(StockDailyBar.trade_date)).scalar()
-    max_date_row = db.query(func.max(StockDailyBar.trade_date)).scalar()
+    min_date_row, max_date_row = _combined_trade_calendar_bounds(db)
     if min_date_row is None or max_date_row is None:
         raise HTTPException(status_code=400, detail={"code": "DATE_OUT_OF_RANGE", "message": "数据库中无日线数据"})
 
@@ -127,6 +215,8 @@ def api_run_backtest(body: RunBacktestRequest, db: Session = Depends(get_db)):
                 "message": f"日期超出数据库可用范围 ({min_date_row} ~ {max_date_row})",
             },
         )
+
+    symbols_norm = _validate_and_normalize_backtest_symbols(db, body)
 
     task_id = _generate_task_id(body.strategy_id, body.start_date, body.end_date)
     desc = strategy.describe()
@@ -153,6 +243,7 @@ def api_run_backtest(body: RunBacktestRequest, db: Session = Depends(get_db)):
                 end_date=body.end_date,
                 position_amount=float(body.position_amount),
                 reserve_amount=float(body.reserve_amount),
+                symbols=symbols_norm or None,
             )
         except Exception as e:
             logger.exception("回测后台线程异常: task_id=%s", task_id)
@@ -611,6 +702,5 @@ def api_get_best_options(task_id: str, db: Session = Depends(get_db)):
 
 @router.get("/data-range", response_model=DataRangeResponse)
 def api_get_data_range(db: Session = Depends(get_db)):
-    min_date = db.query(func.min(StockDailyBar.trade_date)).scalar()
-    max_date = db.query(func.max(StockDailyBar.trade_date)).scalar()
+    min_date, max_date = _combined_trade_calendar_bounds(db)
     return DataRangeResponse(min_date=min_date, max_date=max_date)

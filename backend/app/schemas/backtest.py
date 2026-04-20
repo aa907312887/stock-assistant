@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class RunBacktestRequest(BaseModel):
@@ -24,6 +24,23 @@ class RunBacktestRequest(BaseModel):
         le=1_000_000_000,
         description="补仓金额（元）：预备资金池初始额度；本金不足持仓额时从此池划入，用尽则不再补仓。",
     )
+    symbols: list[str] = Field(
+        default_factory=list,
+        description="可选：限定回测标的 ts_code 列表（最多 20 个；也可传逗号分隔字符串）。指数仅支持已适配策略；空列表表示全市场。",
+    )
+
+    @field_validator("symbols", mode="before")
+    @classmethod
+    def _coerce_symbols(cls, v: object) -> list[str]:
+        if v is None:
+            return []
+        if isinstance(v, str):
+            out = [x.strip() for x in v.split(",") if x.strip()]
+        elif isinstance(v, list):
+            out = [str(x).strip() for x in v if str(x).strip()]
+        else:
+            out = []
+        return out[:20]
 
 
 class RunBacktestResponse(BaseModel):

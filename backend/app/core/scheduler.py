@@ -1,6 +1,7 @@
 """APScheduler：交易日 17:00 股票数据同步；17:10/启动后大盘温度；17:20–17:21 若干策略自动选股落库（含红三兵 di_wei_lian_yang）。
 
 历史累计高低（``cum_hist_*``）在日线写入流程内递推更新，无单独定时任务。
+指数：交易日 17:05 增量日线（见 ``_job_sync_index``）。
 """
 import logging
 from datetime import date, datetime, timedelta
@@ -12,6 +13,7 @@ from apscheduler.triggers.date import DateTrigger
 from app.core.scheduled_job_logging import guess_tushare_api_from_exception, log_scheduled_job_failure
 from app.database import SessionLocal
 from app.models import SyncJobRun
+from app.services.index_sync_service import run_index_sync
 from app.services.stock_sync_orchestrator import run_stock_sync
 from app.services.sync_task_runner import (
     ensure_auto_tasks_for_trade_date,
@@ -36,12 +38,36 @@ _JOB_STRATEGY_PANIC = "strategy_panic_pullback_daily"
 _JOB_STRATEGY_BCB = "strategy_bottom_consolidation_breakout_daily"
 _JOB_STRATEGY_ZCSZX = "strategy_zao_chen_shi_zi_xing_daily"
 _JOB_STRATEGY_DWLY = "strategy_di_wei_lian_yang_daily"
-_JOB_STRATEGY_DWLY = "strategy_di_wei_lian_yang_daily"
+_JOB_SYNC_INDEX = "index_sync_daily"
 
 _scheduler: BackgroundScheduler | None = None
 CRON_HOUR = 17
 CRON_MINUTE = 0
 TIMEZONE = "Asia/Shanghai"
+
+
+def _job_sync_index() -> None:
+    """交易日增量同步指数日线（main 同步之后）。"""
+    today = date.today()
+    latest = get_latest_open_trade_date(today)
+    if latest is None or latest != today:
+        logger.info("指数同步跳过：今日非交易日（最近开市日=%s）", latest)
+        return
+    db = SessionLocal()
+    try:
+        result = run_index_sync(db, modules=["daily"], mode="incremental")
+        logger.info("指数增量同步完成 modules=%s", result.get("modules"))
+    except Exception as e:
+        log_scheduled_job_failure(
+            logger,
+            job_id=_JOB_SYNC_INDEX,
+            scheduler_entry="app.core.scheduler._job_sync_index",
+            business_callable="app.services.index_sync_service.run_index_sync",
+            external_api=guess_tushare_api_from_exception(e),
+            exc=e,
+        )
+    finally:
+        db.close()
 
 
 def _job_sync_stock() -> None:
@@ -281,6 +307,12 @@ def start_scheduler() -> None:
         replace_existing=True,
     )
     _scheduler.add_job(
+        _job_sync_index,
+        trigger=CronTrigger(hour=17, minute=5, timezone=TIMEZONE),
+        id=_JOB_SYNC_INDEX,
+        replace_existing=True,
+    )
+    _scheduler.add_job(
         _job_sync_market_temperature,
         trigger=CronTrigger(hour=17, minute=10, timezone=TIMEZONE),
         id=_JOB_MARKET_TEMP,
@@ -330,7 +362,7 @@ def start_scheduler() -> None:
     finally:
         _db.close()
     logger.info(
-        "Scheduler started: stock_sync daily at %s:%s %s modules=%s; cum_hist 随日线写入递推（无独立 Job）",
+        "Scheduler started: stock_sync daily at %s:%s %s modules=%s; index_sync 17:05; cum_hist 随日线写入递推（无独立 Job）",
         CRON_HOUR,
         CRON_MINUTE,
         TIMEZONE,

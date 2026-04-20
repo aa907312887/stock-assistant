@@ -85,6 +85,27 @@
         />
       </el-form-item>
       <el-form-item>
+        <template #label>
+          <span>标的（可选）</span>
+          <el-tooltip placement="top">
+            <template #content>
+              <div style="max-width: 320px; line-height: 1.6">
+                仅在选择<strong>均线金叉</strong>策略时生效；可填一个或多个 ts_code（逗号/空格分隔），回测将只扫描这些标的。<br />
+                支持<strong>指数</strong>（如 399300.SZ）或<strong>个股</strong>；<strong>不可在同一任务中混填个股与指数</strong>。指数行情来自指数日线表，与全市场个股回测数据源不同。<br />
+                其它策略请留空，仍按全市场回测。
+              </div>
+            </template>
+            <el-icon class="hint-icon label-hint"><QuestionFilled /></el-icon>
+          </el-tooltip>
+        </template>
+        <el-input
+          v-model="form.symbols_text"
+          placeholder="例：399300.SZ 或 000001.SZ,600000.SH"
+          clearable
+          style="width: 280px"
+        />
+      </el-form-item>
+      <el-form-item>
         <el-button type="primary" :loading="loading" @click="handleStart">
           开始回测
         </el-button>
@@ -100,7 +121,7 @@
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { listStrategies, type StrategySummary } from '@/api/strategies'
-import { runBacktest, getDataRange } from '@/api/backtest'
+import { runBacktest, getDataRange, type RunBacktestRequest } from '@/api/backtest'
 
 const emit = defineEmits<{
   'backtest-started': []
@@ -114,6 +135,8 @@ const form = reactive({
   end_date: '',
   position_amount: 100_000,
   reserve_amount: 100_000,
+  /** 逗号/空格分隔，解析为 symbols 数组提交 */
+  symbols_text: '',
 })
 const loading = ref(false)
 
@@ -175,13 +198,19 @@ async function handleStart() {
 
   loading.value = true
   try {
-    await runBacktest({
+    const parts = form.symbols_text
+      .split(/[,，\s]+/)
+      .map((s) => s.trim())
+      .filter(Boolean)
+    const payload: RunBacktestRequest = {
       strategy_id: form.strategy_id,
       start_date: form.start_date,
       end_date: form.end_date,
       position_amount: form.position_amount,
       reserve_amount: form.reserve_amount,
-    })
+    }
+    if (parts.length) payload.symbols = parts
+    await runBacktest(payload)
     ElMessage.success('回测任务已创建，后台执行中')
     emit('backtest-started')
   } catch (e: any) {

@@ -894,6 +894,110 @@ def get_index_daily_range(ts_code: str, *, start_date: date, end_date: date) -> 
     raise TushareClientError(f"Tushare index_daily 失败: {last_err}") from last_err
 
 
+# 拉取 index_basic 时常用 market 列表（Tushare 分市场；全量时循环）
+INDEX_BASIC_MARKETS = ("MSCI", "CSI", "SSE", "SZSE", "SW", "CICC", "OTH")
+
+
+def get_index_basic(*, market: str | None = None) -> list[dict[str, Any]]:
+    """获取指数基本信息（index_basic）。可指定 market；不传则部分积分下可能需分批调用。"""
+    pro = _get_pro()
+    last_err: Exception | None = None
+    for attempt in range(MAX_RETRIES):
+        try:
+            _rate_pause()
+            kwargs: dict[str, Any] = {}
+            if market:
+                kwargs["market"] = market
+            df = pro.index_basic(**kwargs)
+            return _df_to_records(df)
+        except Exception as e:
+            last_err = e
+            logger.warning("Tushare index_basic 失败 attempt=%s market=%s error=%s", attempt + 1, market, e)
+            if attempt < MAX_RETRIES - 1:
+                time.sleep(RETRY_INTERVAL_SEC)
+    raise TushareClientError(f"Tushare index_basic 失败: {last_err}") from last_err
+
+
+def get_index_weekly_range(ts_code: str, *, start_date: date, end_date: date) -> list[dict[str, Any]]:
+    """指数周线 index_weekly（单次≤1000 行，外层需分段）。"""
+    pro = _get_pro()
+    last_err: Exception | None = None
+    for attempt in range(MAX_RETRIES):
+        try:
+            _rate_pause()
+            df = pro.index_weekly(
+                ts_code=ts_code,
+                start_date=start_date.strftime("%Y%m%d"),
+                end_date=end_date.strftime("%Y%m%d"),
+            )
+            return _df_to_records(df)
+        except Exception as e:
+            last_err = e
+            logger.warning(
+                "Tushare index_weekly 失败 attempt=%s code=%s error=%s",
+                attempt + 1,
+                ts_code,
+                e,
+            )
+            if attempt < MAX_RETRIES - 1:
+                time.sleep(RETRY_INTERVAL_SEC)
+    raise TushareClientError(f"Tushare index_weekly 失败: {last_err}") from last_err
+
+
+def get_index_monthly_range(ts_code: str, *, start_date: date, end_date: date) -> list[dict[str, Any]]:
+    """指数月线 index_monthly（单次≤1000 行，外层需分段）。"""
+    pro = _get_pro()
+    last_err: Exception | None = None
+    for attempt in range(MAX_RETRIES):
+        try:
+            _rate_pause()
+            df = pro.index_monthly(
+                ts_code=ts_code,
+                start_date=start_date.strftime("%Y%m%d"),
+                end_date=end_date.strftime("%Y%m%d"),
+            )
+            return _df_to_records(df)
+        except Exception as e:
+            last_err = e
+            logger.warning(
+                "Tushare index_monthly 失败 attempt=%s code=%s error=%s",
+                attempt + 1,
+                ts_code,
+                e,
+            )
+            if attempt < MAX_RETRIES - 1:
+                time.sleep(RETRY_INTERVAL_SEC)
+    raise TushareClientError(f"Tushare index_monthly 失败: {last_err}") from last_err
+
+
+def get_index_weight_range(
+    index_code: str, *, start_date: date, end_date: date
+) -> list[dict[str, Any]]:
+    """指数成分与权重 index_weight（index_code 即指数 ts_code）。"""
+    pro = _get_pro()
+    last_err: Exception | None = None
+    for attempt in range(MAX_RETRIES):
+        try:
+            _rate_pause()
+            df = pro.index_weight(
+                index_code=index_code,
+                start_date=start_date.strftime("%Y%m%d"),
+                end_date=end_date.strftime("%Y%m%d"),
+            )
+            return _df_to_records(df)
+        except Exception as e:
+            last_err = e
+            logger.warning(
+                "Tushare index_weight 失败 attempt=%s index=%s error=%s",
+                attempt + 1,
+                index_code,
+                e,
+            )
+            if attempt < MAX_RETRIES - 1:
+                time.sleep(RETRY_INTERVAL_SEC)
+    raise TushareClientError(f"Tushare index_weight 失败: {last_err}") from last_err
+
+
 def _safe_trade_date(text: str) -> date | None:
     text = text.strip()
     if not text:

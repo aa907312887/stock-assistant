@@ -17,12 +17,18 @@ from fastapi import HTTPException
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
+from app.db_table_check import db_has_table
+
 from app.models.market_temperature_daily import MarketTemperatureDaily
 from app.models.paper_trading import (
     PaperTradingOrder,
     PaperTradingPosition,
     PaperTradingSession,
 )
+from app.models.index_basic import IndexBasic
+from app.models.index_daily_bar import IndexDailyBar
+from app.models.index_monthly_bar import IndexMonthlyBar
+from app.models.index_weekly_bar import IndexWeeklyBar
 from app.models.stock_daily_bar import StockDailyBar
 from app.models.stock_monthly_bar import StockMonthlyBar
 from app.models.stock_weekly_bar import StockWeeklyBar
@@ -84,6 +90,11 @@ def _normalize_ts_code(code: str) -> str:
     return s.upper()
 
 
+def _index_feature_tables_ready(db: Session) -> bool:
+    """指数专题表是否已创建。未执行 DDL 时无 index_basic，查询会 1146 导致接口 500。"""
+    return db_has_table(db, "index_basic")
+
+
 def _buy_cost_from_closed_batches(db: Session, session_id: str, stock_code: str) -> Decimal:
     """已关闭批次上的买入总成本（∑ 成交价×数量 + 买佣），订单漏记买入时可作兜底。"""
     total = Decimal(0)
@@ -115,18 +126,35 @@ def _session_is_ended(session: PaperTradingSession) -> bool:
     return (session.status or "").strip().lower() == "ended"
 
 
-def _get_daily_bar(db: Session, stock_code: str, trade_date: date) -> StockDailyBar:
-    """查询当日日线数据，不存在则说明停牌或无数据。"""
-    bar = db.query(StockDailyBar).filter(
-        StockDailyBar.stock_code == stock_code,
-        StockDailyBar.trade_date == trade_date,
-    ).first()
+def _get_quote_bar_for_day(
+    db: Session, raw_code: str, trade_date: date
+) -> tuple[bool, StockDailyBar | IndexDailyBar]:
+    """返回 (是否指数, 当日行情行)。指数用 index_daily_bar，个股用 stock_daily_bar。"""
+    code = _normalize_ts_code(raw_code)
+    if _index_feature_tables_ready(db) and db.query(IndexBasic.ts_code).filter(IndexBasic.ts_code == code).first():
+        bar = (
+            db.query(IndexDailyBar)
+            .filter(IndexDailyBar.index_code == code, IndexDailyBar.trade_date == trade_date)
+            .first()
+        )
+        if bar is None:
+            raise HTTPException(
+                status_code=400,
+                detail={"code": "INDEX_QUOTE_MISSING", "message": f"指数 {code} 当日无点位行情"},
+            )
+        return True, bar
+
+    bar = (
+        db.query(StockDailyBar)
+        .filter(StockDailyBar.stock_code == code, StockDailyBar.trade_date == trade_date)
+        .first()
+    )
     if bar is None:
         raise HTTPException(
             status_code=400,
-            detail={"code": "STOCK_SUSPENDED", "message": f"股票 {stock_code} 当日停牌或无数据"},
+            detail={"code": "STOCK_SUSPENDED", "message": f"股票 {code} 当日停牌或无数据"},
         )
-    return bar
+    return False, bar
 
 
 def _prev_trading_date_before(db: Session, sim_day: date) -> date | None:
@@ -205,6 +233,7 @@ def _build_position_summaries(
         agg[code]["batches"].append(pos)
 
     summaries = []
+    index_tables_ok = _index_feature_tables_ready(db)
     for code, info in agg.items():
         batches = info["batches"]
         total_qty = sum(b.remaining_quantity for b in batches)
@@ -216,11 +245,23 @@ def _build_position_summaries(
         total_cost = sum(b.buy_price * b.remaining_quantity for b in batches)
         avg_cost = float(total_cost / total_qty) if total_qty else 0.0
 
-        # 当前参考价：open 阶段用开盘价，close 阶段用收盘价
-        bar = db.query(StockDailyBar).filter(
-            StockDailyBar.stock_code == code,
-            StockDailyBar.trade_date == session.current_date,
-        ).first()
+        # 当前参考价：open 阶段用开盘价，close 阶段用收盘价（指数走 index_daily_bar）
+        norm = _normalize_ts_code(code)
+        bar = None
+        if index_tables_ok and db.query(IndexBasic.ts_code).filter(IndexBasic.ts_code == norm).first():
+            bar = (
+                db.query(IndexDailyBar)
+                .filter(
+                    IndexDailyBar.index_code == norm,
+                    IndexDailyBar.trade_date == session.current_date,
+                )
+                .first()
+            )
+        else:
+            bar = db.query(StockDailyBar).filter(
+                StockDailyBar.stock_code == norm,
+                StockDailyBar.trade_date == session.current_date,
+            ).first()
 
         current_price = None
         market_value = None
@@ -545,13 +586,17 @@ def buy(
     if _session_is_ended(session):
         raise HTTPException(status_code=400, detail={"code": "SESSION_NOT_ACTIVE", "message": "会话已结束"})
 
-    bar = _get_daily_bar(db, stock_code, session.current_date)
-
-    if bar.prev_close is None:
-        raise HTTPException(status_code=400, detail={"code": "NO_PREV_CLOSE", "message": "缺少前收盘价，无法验证涨跌停"})
+    stock_code = _normalize_ts_code(stock_code)
+    is_index, bar = _get_quote_bar_for_day(db, stock_code, session.current_date)
 
     price_dec = Decimal(str(price))
-    _validate_price(price_dec, bar.prev_close)
+    if not is_index:
+        if bar.prev_close is None:
+            raise HTTPException(
+                status_code=400,
+                detail={"code": "NO_PREV_CLOSE", "message": "缺少前收盘价，无法验证涨跌停"},
+            )
+        _validate_price(price_dec, bar.prev_close)
 
     amount = price_dec * quantity
     commission = _calc_commission(amount, BUY_COMMISSION_RATE)
@@ -568,12 +613,16 @@ def buy(
             },
         )
 
-    stock_name = bar.stock_code  # 用 stock_code 兜底，前端可从 stock_basic 获取名称
-    # 尝试从 stock_basic 获取股票名称
+    stock_name = stock_code
     try:
-        basic = db.query(StockBasic).filter(StockBasic.code == stock_code).first()
-        if basic:
-            stock_name = basic.name
+        if is_index:
+            ib = db.query(IndexBasic).filter(IndexBasic.ts_code == stock_code).first()
+            if ib and ib.name:
+                stock_name = ib.name
+        else:
+            basic = db.query(StockBasic).filter(StockBasic.code == stock_code).first()
+            if basic and basic.name:
+                stock_name = basic.name
     except Exception:
         pass
 
@@ -637,13 +686,17 @@ def sell(
     if _session_is_ended(session):
         raise HTTPException(status_code=400, detail={"code": "SESSION_NOT_ACTIVE", "message": "会话已结束"})
 
-    bar = _get_daily_bar(db, stock_code, session.current_date)
-
-    if bar.prev_close is None:
-        raise HTTPException(status_code=400, detail={"code": "NO_PREV_CLOSE", "message": "缺少前收盘价，无法验证涨跌停"})
+    stock_code = _normalize_ts_code(stock_code)
+    is_index, bar = _get_quote_bar_for_day(db, stock_code, session.current_date)
 
     price_dec = Decimal(str(price))
-    _validate_price(price_dec, bar.prev_close)
+    if not is_index:
+        if bar.prev_close is None:
+            raise HTTPException(
+                status_code=400,
+                detail={"code": "NO_PREV_CLOSE", "message": "缺少前收盘价，无法验证涨跌停"},
+            )
+        _validate_price(price_dec, bar.prev_close)
 
     # 查询可卖批次（排除当日买入，按 buy_date ASC, id ASC 排序 = FIFO）
     sellable_batches = (
@@ -662,7 +715,7 @@ def sell(
     if available_qty == 0:
         raise HTTPException(
             status_code=400,
-            detail={"code": "T1_RESTRICTION", "message": "T+1 限制：当日买入的股票次日才能卖出"},
+            detail={"code": "T1_RESTRICTION", "message": "T+1 限制：当日买入的标的次日才能卖出"},
         )
     if quantity > available_qty:
         raise HTTPException(
@@ -692,9 +745,14 @@ def sell(
 
     stock_name = stock_code
     try:
-        basic = db.query(StockBasic).filter(StockBasic.code == stock_code).first()
-        if basic:
-            stock_name = basic.name
+        if is_index:
+            ib = db.query(IndexBasic).filter(IndexBasic.ts_code == stock_code).first()
+            if ib and ib.name:
+                stock_name = ib.name
+        else:
+            basic = db.query(StockBasic).filter(StockBasic.code == stock_code).first()
+            if basic and basic.name:
+                stock_name = basic.name
     except Exception:
         pass
 
@@ -769,6 +827,153 @@ def list_orders(
     return OrderListResponse(total=total, page=page, page_size=page_size, items=items)
 
 
+def _get_chart_data_index(
+    db: Session,
+    index_code: str,
+    end_date: date,
+    phase: str,
+    period: str,
+    limit: int,
+    *,
+    full_history: bool = True,
+) -> ChartDataResponse:
+    """指数 K 线：数据源为 index_*_bar；不提供个股涨跌停价。"""
+    stock_name = index_code
+    try:
+        ib = db.query(IndexBasic).filter(IndexBasic.ts_code == index_code).first()
+        if ib and ib.name:
+            stock_name = ib.name
+    except Exception:
+        pass
+
+    bars: list[ChartBar] = []
+    open_price = None
+    close_price = None
+    limit_up = None
+    limit_down = None
+
+    if period == "weekly":
+        q_w = db.query(IndexWeeklyBar).filter(
+            IndexWeeklyBar.index_code == index_code,
+            IndexWeeklyBar.trade_week_end <= end_date,
+        )
+        if full_history:
+            rows = q_w.order_by(IndexWeeklyBar.trade_week_end.asc()).all()
+        else:
+            rows = q_w.order_by(IndexWeeklyBar.trade_week_end.desc()).limit(limit).all()
+            rows = list(reversed(rows))
+        n = len(rows)
+        for i, r in enumerate(rows):
+            is_latest = i == n - 1
+            hide = is_latest and phase == "open" and r.trade_week_end == end_date
+            bars.append(
+                ChartBar(
+                    date=str(r.trade_week_end),
+                    open=float(r.open) if r.open is not None else None,
+                    high=None if hide else (float(r.high) if r.high is not None else None),
+                    low=None if hide else (float(r.low) if r.low is not None else None),
+                    close=None if hide else (float(r.close) if r.close is not None else None),
+                    volume=None if hide else (float(r.volume) if r.volume is not None else None),
+                    prev_close=None,
+                    pct_change=None if hide else (float(r.pct_change) if r.pct_change is not None else None),
+                    ma5=float(r.ma5) if r.ma5 else None,
+                    ma10=float(r.ma10) if r.ma10 else None,
+                    ma20=float(r.ma20) if r.ma20 else None,
+                    ma60=float(r.ma60) if r.ma60 else None,
+                    macd_dif=None if hide else (float(r.macd_dif) if r.macd_dif is not None else None),
+                    macd_dea=None if hide else (float(r.macd_dea) if r.macd_dea is not None else None),
+                    macd_hist=None if hide else (float(r.macd_hist) if r.macd_hist is not None else None),
+                )
+            )
+
+    elif period == "monthly":
+        q_m = db.query(IndexMonthlyBar).filter(
+            IndexMonthlyBar.index_code == index_code,
+            IndexMonthlyBar.trade_month_end <= end_date,
+        )
+        if full_history:
+            rows = q_m.order_by(IndexMonthlyBar.trade_month_end.asc()).all()
+        else:
+            rows = q_m.order_by(IndexMonthlyBar.trade_month_end.desc()).limit(limit).all()
+            rows = list(reversed(rows))
+        n = len(rows)
+        for i, r in enumerate(rows):
+            is_latest = i == n - 1
+            hide = is_latest and phase == "open" and r.trade_month_end == end_date
+            bars.append(
+                ChartBar(
+                    date=str(r.trade_month_end),
+                    open=float(r.open) if r.open is not None else None,
+                    high=None if hide else (float(r.high) if r.high is not None else None),
+                    low=None if hide else (float(r.low) if r.low is not None else None),
+                    close=None if hide else (float(r.close) if r.close is not None else None),
+                    volume=None if hide else (float(r.volume) if r.volume is not None else None),
+                    prev_close=None,
+                    pct_change=None if hide else (float(r.pct_change) if r.pct_change is not None else None),
+                    ma5=float(r.ma5) if r.ma5 else None,
+                    ma10=float(r.ma10) if r.ma10 else None,
+                    ma20=float(r.ma20) if r.ma20 else None,
+                    ma60=float(r.ma60) if r.ma60 else None,
+                    macd_dif=None if hide else (float(r.macd_dif) if r.macd_dif is not None else None),
+                    macd_dea=None if hide else (float(r.macd_dea) if r.macd_dea is not None else None),
+                    macd_hist=None if hide else (float(r.macd_hist) if r.macd_hist is not None else None),
+                )
+            )
+
+    else:
+        q_d = db.query(IndexDailyBar).filter(
+            IndexDailyBar.index_code == index_code,
+            IndexDailyBar.trade_date <= end_date,
+        )
+        if full_history:
+            rows = q_d.order_by(IndexDailyBar.trade_date.asc()).all()
+        else:
+            rows = q_d.order_by(IndexDailyBar.trade_date.desc()).limit(limit).all()
+            rows = list(reversed(rows))
+        for r in rows:
+            is_latest = r.trade_date == end_date
+            hide = is_latest and phase == "open"
+            bars.append(
+                ChartBar(
+                    date=str(r.trade_date),
+                    open=float(r.open) if r.open else None,
+                    high=None if hide else (float(r.high) if r.high else None),
+                    low=None if hide else (float(r.low) if r.low else None),
+                    close=None if hide else (float(r.close) if r.close else None),
+                    volume=None if hide else (float(r.volume) if r.volume else None),
+                    prev_close=float(r.prev_close) if r.prev_close else None,
+                    pct_change=None if hide else (float(r.pct_change) if r.pct_change else None),
+                    ma5=float(r.ma5) if r.ma5 else None,
+                    ma10=float(r.ma10) if r.ma10 else None,
+                    ma20=float(r.ma20) if r.ma20 else None,
+                    ma60=float(r.ma60) if r.ma60 else None,
+                    macd_dif=None if hide else (float(r.macd_dif) if r.macd_dif else None),
+                    macd_dea=None if hide else (float(r.macd_dea) if r.macd_dea else None),
+                    macd_hist=None if hide else (float(r.macd_hist) if r.macd_hist else None),
+                )
+            )
+
+        today_bar = (
+            db.query(IndexDailyBar)
+            .filter(IndexDailyBar.index_code == index_code, IndexDailyBar.trade_date == end_date)
+            .first()
+        )
+        if today_bar:
+            open_price = float(today_bar.open) if today_bar.open else None
+            close_price = float(today_bar.close) if (phase == "close" and today_bar.close) else None
+
+    return ChartDataResponse(
+        stock_code=index_code,
+        stock_name=stock_name,
+        period=period,
+        open_price=open_price,
+        close_price=close_price,
+        limit_up=limit_up,
+        limit_down=limit_down,
+        data=bars,
+    )
+
+
 def get_chart_data(
     db: Session,
     stock_code: str,
@@ -785,6 +990,11 @@ def get_chart_data(
     - full_history=False：仅最近 limit 根（原行为）。
     phase=open 时最新一根按各周期规则掩码未揭晓的 OHLCV、涨跌幅与 MACD。
     """
+    norm = _normalize_ts_code(stock_code)
+    if _index_feature_tables_ready(db) and db.query(IndexBasic.ts_code).filter(IndexBasic.ts_code == norm).first():
+        return _get_chart_data_index(db, norm, end_date, phase, period, limit, full_history=full_history)
+    stock_code = norm
+
     stock_name = stock_code
     try:
         basic = db.query(StockBasic).filter(StockBasic.code == stock_code).first()
@@ -922,29 +1132,64 @@ def get_chart_data(
 
 
 def resolve_stock_query(db: Session, query: str, limit: int) -> StockResolveResponse:
-    """按股票代码或名称模糊匹配，供 K 线查询与资料弹窗解析用户输入。"""
+    """按股票代码或名称模糊匹配；含 index_basic 指数代码/名称。"""
     raw = (query or "").strip()
     if not raw:
         return StockResolveResponse(items=[])
     lim = max(1, min(limit, 50))
 
-    exact = db.query(StockBasic).filter(StockBasic.code == raw).first()
-    if exact:
+    exact_stock = db.query(StockBasic).filter(StockBasic.code == raw).first()
+    if exact_stock:
         return StockResolveResponse(
-            items=[StockResolveItem(stock_code=exact.code, stock_name=exact.name)],
+            items=[
+                StockResolveItem(
+                    stock_code=exact_stock.code,
+                    stock_name=exact_stock.name,
+                    instrument_kind="stock",
+                )
+            ],
+        )
+
+    norm_try = _normalize_ts_code(raw)
+    exact_idx = None
+    if _index_feature_tables_ready(db):
+        exact_idx = db.query(IndexBasic).filter(IndexBasic.ts_code == norm_try).first()
+    if exact_idx:
+        return StockResolveResponse(
+            items=[
+                StockResolveItem(
+                    stock_code=exact_idx.ts_code,
+                    stock_name=exact_idx.name,
+                    instrument_kind="index",
+                )
+            ],
         )
 
     pat = f"%{raw}%"
-    rows = (
+    rows_s = (
         db.query(StockBasic)
         .filter(or_(StockBasic.code.like(pat), StockBasic.name.like(pat)))
         .order_by(StockBasic.code.asc())
         .limit(lim)
         .all()
     )
-    return StockResolveResponse(
-        items=[StockResolveItem(stock_code=r.code, stock_name=r.name) for r in rows],
+    rows_i: list[IndexBasic] = []
+    if _index_feature_tables_ready(db):
+        rows_i = (
+            db.query(IndexBasic)
+            .filter(or_(IndexBasic.ts_code.like(pat), IndexBasic.name.like(pat)))
+            .order_by(IndexBasic.ts_code.asc())
+            .limit(lim)
+            .all()
+        )
+    merged: list[StockResolveItem] = [
+        StockResolveItem(stock_code=r.code, stock_name=r.name, instrument_kind="stock") for r in rows_s
+    ]
+    merged.extend(
+        StockResolveItem(stock_code=r.ts_code, stock_name=r.name, instrument_kind="index") for r in rows_i
     )
+    merged.sort(key=lambda x: x.stock_code)
+    return StockResolveResponse(items=merged[:lim])
 
 
 def _fdec(v) -> float | None:
@@ -960,11 +1205,60 @@ def get_stock_info_snapshot(
     phase: str,
 ) -> PaperStockInfoResponse:
     """当前模拟日下的股票资料：基本信息、日线一行（遵守 phase 掩码）、截至 end_date 最近一期财报。"""
+    stock_code = _normalize_ts_code(stock_code)
     basic_row = db.query(StockBasic).filter(StockBasic.code == stock_code).first()
+    idx_row = None
+    if _index_feature_tables_ready(db):
+        idx_row = db.query(IndexBasic).filter(IndexBasic.ts_code == stock_code).first()
+
+    if idx_row and not basic_row:
+        basic = StockInfoBasicBlock(
+            stock_code=idx_row.ts_code,
+            stock_name=idx_row.name,
+            exchange=idx_row.market,
+            market=idx_row.market,
+            industry_name=None,
+            region=None,
+            list_date=str(idx_row.list_date) if idx_row.list_date else None,
+        )
+        bar = (
+            db.query(IndexDailyBar)
+            .filter(IndexDailyBar.index_code == stock_code, IndexDailyBar.trade_date == end_date)
+            .first()
+        )
+        hide = phase == "open"
+        daily: StockInfoDailyBlock | None = None
+        if bar:
+            daily = StockInfoDailyBlock(
+                trade_date=str(bar.trade_date),
+                open=_fdec(bar.open),
+                high=None if hide else _fdec(bar.high),
+                low=None if hide else _fdec(bar.low),
+                close=None if hide else _fdec(bar.close),
+                prev_close=_fdec(bar.prev_close),
+                pct_change=None if hide else _fdec(bar.pct_change),
+                volume=None if hide else _fdec(bar.volume),
+                amount=None if hide else _fdec(bar.amount),
+                amplitude=None if hide else _fdec(bar.amplitude),
+                turnover_rate=None,
+                pe_ttm=None,
+                pb=None,
+                total_market_cap=None,
+                float_market_cap=None,
+            )
+        return PaperStockInfoResponse(
+            stock_code=stock_code,
+            end_date=str(end_date),
+            phase=phase,
+            basic=basic,
+            daily=daily,
+            financial=None,
+        )
+
     if not basic_row:
         raise HTTPException(
             status_code=404,
-            detail={"code": "STOCK_NOT_FOUND", "message": "未找到该股票基础信息"},
+            detail={"code": "STOCK_NOT_FOUND", "message": "未找到该股票或指数基础信息"},
         )
 
     basic = StockInfoBasicBlock(

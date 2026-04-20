@@ -219,8 +219,8 @@
       <div class="chart-toolbar">
         <el-input
           v-model="stockInput"
-          placeholder="代码或名称，如 000001.SZ、平安"
-          style="width: 220px"
+          placeholder="股票或指数代码/名称，如 000001.SZ、399300.SZ"
+          style="width: 240px"
           clearable
           @keyup.enter="queryKlineFromInput"
         />
@@ -228,9 +228,10 @@
         <el-button @click="openStockInfoFromInput" :loading="stockInfoLoading">查看股票信息</el-button>
         <el-tooltip placement="bottom" :show-after="200">
           <template #content>
-            <div style="max-width: 280px; line-height: 1.6">
-              「查询」：支持代码或名称模糊匹配，解析成功后加载 K 线；多条匹配时请在列表中选定一只。<br />
-              「查看股票信息」：弹窗展示基础资料、当前模拟日对应的日表行情，以及报告期不晚于模拟日的最近一期财报指标（如 ROE、资产负债率等）。
+            <div style="max-width: 300px; line-height: 1.6">
+              「查询」：支持<strong>个股</strong>或<strong>指数</strong>代码/名称模糊匹配，解析成功后加载 K 线（指数为点位行情）；多条匹配时请在列表中选定一只。<br />
+              「查看股票信息」：个股展示财报与估值字段；<strong>指数</strong>仅展示指数基础信息与当日点位行情，无财报。<br />
+              指数仿真：<strong>T+1</strong>仍适用；<strong>不设个股式涨跌停委托校验</strong>。
             </div>
           </template>
           <el-icon class="chart-toolbar-help"><QuestionFilled /></el-icon>
@@ -389,12 +390,12 @@
     <!-- 多只匹配时选人 -->
     <el-dialog
       v-model="pickDialog.visible"
-      title="请选择股票"
+      title="请选择标的"
       width="480px"
       destroy-on-close
       @closed="onPickDialogClosed"
     >
-      <p class="pick-hint">根据您的输入匹配到多只股票，请选择一行或双击确认。</p>
+      <p class="pick-hint">根据您的输入匹配到多只标的，请选择一行或双击确认。</p>
       <el-table
         :data="pickDialog.items"
         max-height="320"
@@ -402,7 +403,13 @@
         @row-dblclick="(row: StockResolveItem) => confirmPickStock(row)"
       >
         <el-table-column prop="stock_code" label="代码" width="120" />
-        <el-table-column prop="stock_name" label="名称" />
+        <el-table-column prop="stock_name" label="名称" min-width="120" />
+        <el-table-column label="类型" width="72">
+          <template #default="{ row }">
+            <el-tag v-if="row.instrument_kind === 'index'" type="warning" size="small">指数</el-tag>
+            <el-tag v-else type="info" size="small">股票</el-tag>
+          </template>
+        </el-table-column>
         <el-table-column label="操作" width="90" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" size="small" @click="confirmPickStock(row)">选用</el-button>
@@ -920,7 +927,7 @@ async function resolveUserInputToCode(): Promise<string | null> {
   try {
     const { data } = await paperTradingApi.resolveStock({ q: raw })
     if (!data.items.length) {
-      ElMessage.warning('未找到匹配的股票')
+      ElMessage.warning('未找到匹配的标的')
       return null
     }
     if (data.items.length === 1) return data.items[0].stock_code

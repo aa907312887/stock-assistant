@@ -1,7 +1,7 @@
 """历史模拟交易 Pydantic Schemas。"""
 
 from datetime import date, datetime
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import BaseModel, field_validator
 
@@ -237,6 +237,7 @@ class TradingDatesResponse(BaseModel):
 class StockResolveItem(BaseModel):
     stock_code: str
     stock_name: Optional[str]
+    instrument_kind: Literal["stock", "index"] = "stock"
 
 
 class StockResolveResponse(BaseModel):

@@ -23,6 +23,11 @@ from app.models.backtest_task import BacktestTask
 from app.models.backtest_trade import BacktestTrade
 from app.models.simulation_task import SimulationTask
 from app.models.simulation_trade import SimulationTrade
+from app.models.index_basic import IndexBasic
+from app.models.index_daily_bar import IndexDailyBar
+from app.models.index_weekly_bar import IndexWeeklyBar
+from app.models.index_monthly_bar import IndexMonthlyBar
+from app.models.index_weight import IndexWeight
 
 __all__ = [
     "User",
@@ -50,4 +55,9 @@ __all__ = [
     "BacktestTrade",
     "SimulationTask",
     "SimulationTrade",
+    "IndexBasic",
+    "IndexDailyBar",
+    "IndexWeeklyBar",
+    "IndexMonthlyBar",
+    "IndexWeight",
 ]

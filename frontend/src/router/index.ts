@@ -22,6 +22,7 @@ const router = createRouter({
           component: () => import('@/views/MarketTemperatureView.vue'),
         },
         { path: 'stock-screening', name: 'stock-screening', component: () => import('@/views/StockScreeningView.vue') },
+        { path: 'index-fund', name: 'index-fund', component: () => import('@/views/IndexScreeningView.vue') },
         {
           path: 'fundamental-analysis',
           name: 'fundamental-analysis',

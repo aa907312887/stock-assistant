@@ -8,6 +8,11 @@ export type RunBacktestRequest = {
   position_amount?: number
   /** 补仓金额 / 预备池（元），默认 10 万；可为 0 表示不补仓 */
   reserve_amount?: number
+  /**
+   * 可选：限定回测标的 ts_code（仅「均线金叉」生效；可多代码）。
+   * 支持个股或指数，不可混填；指数使用 index_daily_bar。
+   */
+  symbols?: string[]
 }
 
 export type RunBacktestResponse = {

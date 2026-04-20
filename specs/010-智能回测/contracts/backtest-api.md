@@ -1,6 +1,6 @@
 # 接口契约：智能回测 API
 
-**日期**: 2026-03-26（2026-03-29 修订：`report.portfolio_capital`、总收益率资金口径；2026-03-29 增补：交易明细人工评价与 `user_decision_stats`）| **路由前缀**: `/api/backtest`
+**日期**: 2026-03-26（2026-03-29 修订：`report.portfolio_capital`、总收益率资金口径；2026-03-29 增补：交易明细人工评价与 `user_decision_stats`；2026-04-18 增补：`symbols` 限定标的与指数专题联动）| **路由前缀**: `/api/backtest`
 
 所有接口挂载在 `backend/app/api/backtest.py` 路由模块下，通过 `app/main.py` 注册。
 
@@ -20,7 +20,8 @@
   "start_date": "2024-01-01",
   "end_date": "2024-12-31",
   "position_amount": 100000,
-  "reserve_amount": 100000
+  "reserve_amount": 100000,
+  "symbols": ["399300.SZ"]
 }
 ```
 
@@ -31,6 +32,7 @@
 | `end_date` | string (YYYY-MM-DD) | 是 | 回测结束日期 |
 | `position_amount` | number | 否 | 持仓金额（元），默认 `100000`；每笔固定名义本金，初始可操作现金等于该值；须 > 0 |
 | `reserve_amount` | number | 否 | 补仓金额（元），默认 `100000`；预备资金池初始额度，本金不足持仓额时从此池划入，用尽则不再补仓；可填 `0` |
+| `symbols` | string[] | 否 | 限定参与扫描的 `ts_code`（最多 20 个）。**当前仅 `ma_golden_cross`（均线金叉）** 会读取该字段；可填**个股**或**指数**，**同一请求内不可混填**；指数数据来自 `index_daily_bar`。其它策略请省略或传空数组，行为与原先全市场一致。 |
 
 ### 响应（202 Accepted）
 
@@ -49,6 +51,10 @@
 | 400 | `INVALID_PARAMS` | 日期格式错误、start_date > end_date |
 | 400 | `DATE_OUT_OF_RANGE` | 日期超出数据库可用范围 |
 | 404 | `STRATEGY_NOT_FOUND` | strategy_id 不存在 |
+| 400 | `SYMBOLS_NOT_SUPPORTED` | 填写了 `symbols` 但策略不是已支持列表（当前仅均线金叉） |
+| 400 | `SYMBOL_UNKNOWN` | 代码既不在 `stock_basic` 也不在 `index_basic` |
+| 400 | `SYMBOLS_MIXED` | 同一请求中同时包含个股与指数代码 |
+| 400 | `INDEX_NO_BAR` / `STOCK_NO_BAR` | 标的在所选日期区间内无日线 |
 
 ---
 
@@ -403,6 +409,8 @@
 **`GET /api/backtest/data-range`**
 
 获取数据库中日线数据的最早与最晚日期，供前端回测日期选择器约束范围。
+
+**合并规则**：在 `index_daily_bar` 表已存在时，将**个股**与**指数**日线的 `trade_date` 取并集得到 `min_date` / `max_date`；若指数表尚未创建（未执行指数专题 DDL），则**仅依据** `stock_daily_bar`，避免因缺表导致接口失败。
 
 ### 响应（200）
 

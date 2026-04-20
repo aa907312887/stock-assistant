@@ -180,6 +180,8 @@ export interface TradingDatesResponse {
 export interface StockResolveItem {
   stock_code: string
   stock_name: string | null
+  /** 后端：stock=个股，index=指数点位标的 */
+  instrument_kind?: 'stock' | 'index'
 }
 
 export interface StockResolveResponse {

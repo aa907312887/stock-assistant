@@ -19,6 +19,7 @@ from app.api.backtest import router as backtest_router
 from app.api.simulation import router as simulation_router
 from app.api.fundamental import router as fundamental_router
 from app.api.paper_trading import router as paper_trading_router
+from app.api.index import router as index_router
 from app.core.scheduler import shutdown_scheduler, start_scheduler
 
 # 日志：同时输出到控制台和文件 backend/logs/app.log（文件每次写入后 flush，避免 500 时看不到）
@@ -84,6 +85,7 @@ app.include_router(backtest_router, prefix="/api")
 app.include_router(simulation_router, prefix="/api")
 app.include_router(fundamental_router, prefix="/api")
 app.include_router(paper_trading_router, prefix="/api")
+app.include_router(index_router, prefix="/api")
 
 
 @app.exception_handler(Exception)
@@ -125,5 +127,4 @@ def root():
 
 @app.get("/health")
 def health():
-    return {"status": "ok"}
     return {"status": "ok"}

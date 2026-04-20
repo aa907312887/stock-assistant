@@ -4,9 +4,9 @@
 【策略名称】：均线金叉
 【目标】：捕捉短期均线上穿长期均线的金叉信号，在趋势启动初期买入，通过固定止盈止损控制风险收益比。
 【适用范围】：
-- 市场：A 股全市场
+- 市场：A 股全市场（默认回测扫描全部个股日线）；若回测上下文传入 `symbols` 限定标的，则仅扫描所列代码——可为**个股**（`stock_daily_bar`）或**指数**（`index_daily_bar`，与指数专题表族一致）。
 - 数据粒度：日线（无分时数据）
-- 依赖字段：open / close / ma5 / ma10 / trade_date（来自 stock_daily_bar）
+- 依赖字段：open / close / ma5 / ma10 / ma20 / volume / trade_date；个股另依赖 cum_hist_high 做低位过滤，**指数无 cum_hist_high 时跳过该过滤**。
 
 【核心规则】：
 1) 买入条件（金叉确认）：
@@ -41,7 +41,8 @@ from decimal import Decimal
 from sqlalchemy import select, and_
 
 from app.database import SessionLocal
-from app.models import StockBasic, StockDailyBar
+from app.models import IndexBasic, IndexDailyBar, StockBasic, StockDailyBar
+from app.services.backtest.backtest_context import get_backtest_symbols
 from app.services.strategy.strategy_base import (
     BacktestResult,
     BacktestTrade,
@@ -137,8 +138,12 @@ class MAGoldenCrossStrategy(StockStrategy):
         """回测执行：在指定时间范围内模拟策略交易。"""
         params = _Params()
         db = SessionLocal()
-        
+
         try:
+            filtered = get_backtest_symbols()
+            if filtered:
+                return self._backtest_with_symbol_filter(db, filtered, start_date, end_date, params)
+
             # 查询所有日线数据
             bars_stmt = (
                 select(StockDailyBar)
@@ -196,7 +201,117 @@ class MAGoldenCrossStrategy(StockStrategy):
             
         finally:
             db.close()
-    
+
+    def _backtest_with_symbol_filter(
+        self,
+        db,
+        symbols: list[str],
+        start_date: date,
+        end_date: date,
+        params: _Params,
+    ) -> BacktestResult:
+        """限定标的回测：支持多只股票或多只指数（不可混）；指数数据来自 index_daily_bar，不适用 cum_hist 低位过滤。"""
+        syms = list(dict.fromkeys(symbols))
+        index_codes: list[str] = []
+        stock_codes: list[str] = []
+        for s in syms:
+            if db.query(IndexBasic.ts_code).filter(IndexBasic.ts_code == s).first():
+                index_codes.append(s)
+            elif db.query(StockBasic.code).filter(StockBasic.code == s).first():
+                stock_codes.append(s)
+            else:
+                return BacktestResult(trades=[], skipped_count=0, skip_reasons=[f"未知标的: {s}"])
+        if index_codes and stock_codes:
+            return BacktestResult(
+                trades=[],
+                skipped_count=0,
+                skip_reasons=["同一回测不可混合个股与指数标的"],
+            )
+
+        bars_by_code: dict[str, list[Any]] = defaultdict(list)
+        stock_names: dict[str, str | None] = {}
+        index_code_set: set[str] = set()
+
+        if index_codes:
+            index_code_set = set(index_codes)
+            bars_stmt = (
+                select(IndexDailyBar)
+                .where(
+                    and_(
+                        IndexDailyBar.index_code.in_(index_codes),
+                        IndexDailyBar.trade_date >= start_date - timedelta(days=60),
+                        IndexDailyBar.trade_date <= end_date,
+                        IndexDailyBar.close.isnot(None),
+                        IndexDailyBar.ma5.isnot(None),
+                        IndexDailyBar.ma10.isnot(None),
+                        IndexDailyBar.ma20.isnot(None),
+                    )
+                )
+                .order_by(IndexDailyBar.index_code, IndexDailyBar.trade_date)
+            )
+            for bar in db.execute(bars_stmt).scalars().all():
+                bars_by_code[bar.index_code].append(bar)
+            for ts in index_codes:
+                ib = db.query(IndexBasic).filter(IndexBasic.ts_code == ts).first()
+                stock_names[ts] = ib.name if ib else None
+
+        if stock_codes:
+            bars_stmt = (
+                select(StockDailyBar)
+                .where(
+                    and_(
+                        StockDailyBar.stock_code.in_(stock_codes),
+                        StockDailyBar.trade_date >= start_date - timedelta(days=60),
+                        StockDailyBar.trade_date <= end_date,
+                        StockDailyBar.close.isnot(None),
+                        StockDailyBar.ma5.isnot(None),
+                        StockDailyBar.ma10.isnot(None),
+                        StockDailyBar.cum_hist_high.isnot(None),
+                    )
+                )
+                .order_by(StockDailyBar.stock_code, StockDailyBar.trade_date)
+            )
+            for bar in db.execute(bars_stmt).scalars().all():
+                bars_by_code[bar.stock_code].append(bar)
+            basics = (
+                db.execute(select(StockBasic).where(StockBasic.code.in_(stock_codes))).scalars().all()
+            )
+            for b in basics:
+                stock_names[b.code] = b.name
+
+        all_signals: list[_GoldenCrossSignal] = []
+        skipped_count = 0
+        for stock_code, stock_bars in bars_by_code.items():
+            if len(stock_bars) < params.min_hist_days:
+                skipped_count += 1
+                continue
+            skip_lp = stock_code in index_code_set
+            signals = self._find_golden_cross(
+                stock_code, stock_bars, params, start_date, skip_low_position=skip_lp
+            )
+            all_signals.extend(signals)
+
+        logger.info(
+            "均线金叉回测（限定标的）: 标的数=%s, 信号数=%s, 跳过=%s",
+            len(bars_by_code),
+            len(all_signals),
+            skipped_count,
+        )
+
+        trades: list[BacktestTrade] = []
+        for signal in all_signals:
+            trade = self._simulate_trade(
+                signal,
+                bars_by_code[signal.stock_code],
+                stock_names.get(signal.stock_code),
+                params,
+                end_date,
+            )
+            if trade:
+                trades.append(trade)
+
+        return BacktestResult(trades=trades, skipped_count=skipped_count)
+
     def _select_golden_cross_stocks(
         self, db, *, as_of_date: date, p: _Params
     ) -> tuple[list[StrategyCandidate], list[StrategySignal]]:
@@ -281,7 +396,7 @@ class MAGoldenCrossStrategy(StockStrategy):
         
         return items, signals
     
-    def _is_golden_cross(self, bar: StockDailyBar, prev_bar: StockDailyBar) -> bool:
+    def _is_golden_cross(self, bar: Any, prev_bar: Any) -> bool:
         """
         判断是否满足金叉条件：
         1. 当日 MA5 > MA10
@@ -324,9 +439,11 @@ class MAGoldenCrossStrategy(StockStrategy):
     def _find_golden_cross(
         self,
         stock_code: str,
-        bars: list[StockDailyBar],
+        bars: list[Any],
         p: _Params,
         min_trigger_date: date | None = None,
+        *,
+        skip_low_position: bool = False,
     ) -> list[_GoldenCrossSignal]:
         """识别金叉信号。"""
         signals: list[_GoldenCrossSignal] = []
@@ -340,9 +457,10 @@ class MAGoldenCrossStrategy(StockStrategy):
             if not self._is_golden_cross(bar, prev_bar):
                 continue
             
-            # 低位约束：当前股价不超过历史最高价的三分之二
-            if bar.cum_hist_high is None or bar.close > bar.cum_hist_high * Decimal(str(p.low_position_ratio)):
-                continue
+            # 低位约束：个股用 cum_hist_high；指数无该字段则跳过此过滤
+            if not skip_low_position:
+                if bar.cum_hist_high is None or bar.close > bar.cum_hist_high * Decimal(str(p.low_position_ratio)):
+                    continue
             
             # 多头排列判断（用金叉日当天和前一天的数据）
             if not self._is_bullish_alignment(bar, prev_bar):
@@ -365,7 +483,7 @@ class MAGoldenCrossStrategy(StockStrategy):
         
         return signals
     
-    def _next_trade_date(self, current_date: date, bars: list[StockDailyBar]) -> date:
+    def _next_trade_date(self, current_date: date, bars: list[Any]) -> date:
         """获取下一个交易日。"""
         for bar in bars:
             if bar.trade_date > current_date:
@@ -375,7 +493,7 @@ class MAGoldenCrossStrategy(StockStrategy):
     def _simulate_trade(
         self,
         signal: _GoldenCrossSignal,
-        bars: list[StockDailyBar],
+        bars: list[Any],
         stock_name: str | None,
         p: _Params,
         end_date: date,
@@ -469,7 +587,7 @@ class MAGoldenCrossStrategy(StockStrategy):
             },
         )
     
-    def _is_bullish_alignment(self, bar: StockDailyBar, prev_bar: StockDailyBar | None) -> bool:
+    def _is_bullish_alignment(self, bar: Any, prev_bar: Any | None) -> bool:
         """
         检查均线多头排列：
         1. MA5 > MA10 > MA20
