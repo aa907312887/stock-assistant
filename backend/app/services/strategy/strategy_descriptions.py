@@ -47,6 +47,18 @@ low_position_ratio=2/3, low_open_pct=0.02, profit_pct=0.05, stop_loss_pct=0.05, 
 
 【关键参数】
 take_profit_pct=0.15, stop_loss_pct=0.08""",
+    "ma60_five_day_break": """【策略选股 / execute】
+- 截止日 = 突破日 D：D−5～D−1 各根「收盘价 < 当日 ma60」，D 日「收盘价 > 当日 ma60」
+- 仅形态筛选，不模拟买卖；时间轴为库中连续 K，不补停牌
+- 仅买主板：`stock_basic.market == "主板"`，不买创业板/科创板
+
+【历史回测 / backtest】
+- 买入：D 的**下一交易日开盘价**；`open` 无效则不成交
+- 监测价：买入后自下一根 K 起用**收盘价**相对**买入价**
+- 止损：收盘 ≤ 买入价×(1−8%)；止盈：收盘 ≥ 买入价×(1+8%)；先止损后止盈
+
+【关键参数】
+take_profit_pct=0.08, stop_loss_pct=0.08（回测用；选股不演算成交）""",
     "shu_guang_chu_xian": """【买入条件】
 - 形态：前一日阴线跌幅≥3% + 当日阳线实体≥3%
 - 跌势结构：MA5<MA10<MA20，收盘<MA20

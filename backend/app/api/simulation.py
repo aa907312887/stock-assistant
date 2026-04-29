@@ -214,6 +214,7 @@ def api_get_simulation_task(task_id: str, db: Session = Depends(get_db)):
     if task.status in ("completed", "incomplete"):
         assumptions_json = task.assumptions_json or {}
         conclusion = assumptions_json.get("conclusion", "")
+        avg_holding_days = float(assumptions_json.get("avg_holding_days_calendar", 0.0) or 0.0)
 
         report = SimulationReport(
             total_trades=task.total_trades or 0,
@@ -223,6 +224,7 @@ def api_get_simulation_task(task_id: str, db: Session = Depends(get_db)):
             avg_return=float(task.avg_return) if task.avg_return is not None else 0.0,
             max_win=float(task.max_win) if task.max_win is not None else 0.0,
             max_loss=float(task.max_loss) if task.max_loss is not None else 0.0,
+            avg_holding_days=avg_holding_days,
             unclosed_count=task.unclosed_count,
             skipped_count=task.skipped_count,
             conclusion=conclusion,
@@ -266,6 +268,11 @@ def api_get_simulation_trades(
     markets: str | None = Query(default=None, description="多选板块，逗号分隔"),
     exchanges: str | None = Query(default=None, description="多选交易所，逗号分隔"),
     year: int | None = Query(default=None, ge=1990, le=2100, description="按买入日自然年筛选"),
+    sort_by: str | None = Query(
+        default="buy_date",
+        description="排序字段：buy_date/sell_date/buy_price/sell_price/return_rate/holding_days/stock_code",
+    ),
+    sort_order: str | None = Query(default="asc", description="asc/desc"),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=50, ge=1, le=200),
     db: Session = Depends(get_db),
@@ -290,7 +297,30 @@ def api_get_simulation_trades(
     )
 
     total = query.count()
-    records = query.order_by(SimulationTradeModel.buy_date).offset((page - 1) * page_size).limit(page_size).all()
+    # --- 服务端排序：先排序再分页（全量排序，不仅当前页） ---
+    _allowed = {
+        "buy_date": SimulationTradeModel.buy_date,
+        "sell_date": SimulationTradeModel.sell_date,
+        "buy_price": SimulationTradeModel.buy_price,
+        "sell_price": SimulationTradeModel.sell_price,
+        "return_rate": SimulationTradeModel.return_rate,
+        "stock_code": SimulationTradeModel.stock_code,
+    }
+    col = _allowed.get(sort_by or "", SimulationTradeModel.buy_date)
+    desc = (sort_order or "asc").lower() == "desc"
+    if sort_by == "holding_days":
+        # 以自然日差排序：sell_date - buy_date（未平仓 sell_date 为空，放到最后）
+        from sqlalchemy import case
+
+        holding_expr = case(
+            (SimulationTradeModel.sell_date.is_(None), None),
+            else_=SimulationTradeModel.sell_date - SimulationTradeModel.buy_date,
+        )
+        col = holding_expr
+    order_expr = col.desc() if desc else col.asc()
+    # 次级排序保证稳定性
+    query = query.order_by(order_expr, SimulationTradeModel.buy_date.asc(), SimulationTradeModel.stock_code.asc())
+    records = query.offset((page - 1) * page_size).limit(page_size).all()
 
     items = [_row_to_trade_item(r) for r in records]
     return SimulationTradeListResponse(total=total, page=page, page_size=page_size, items=items)

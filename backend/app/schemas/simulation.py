@@ -57,6 +57,7 @@ class SimulationReport(BaseModel):
     avg_return: float
     max_win: float
     max_loss: float
+    avg_holding_days: float = Field(default=0.0, description="平均交易时间（自然日天数，已平仓交易的 sell_date-buy_date 平均值）")
     unclosed_count: int
     skipped_count: int
     conclusion: str

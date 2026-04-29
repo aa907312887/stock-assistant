@@ -61,6 +61,8 @@ export interface SimulationReport {
   avg_return: number
   max_win: number
   max_loss: number
+  /** 平均交易时间：自然日天数（已平仓交易的 sell_date-buy_date 平均值） */
+  avg_holding_days: number
   unclosed_count: number
   skipped_count: number
   conclusion: string
@@ -139,6 +141,8 @@ export async function getSimulationTrades(
     markets?: string
     exchanges?: string
     year?: number
+    sort_by?: string
+    sort_order?: 'asc' | 'desc'
     page?: number
     page_size?: number
   },

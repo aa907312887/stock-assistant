@@ -58,6 +58,10 @@
           <div class="metric-value loss">{{ (detail.report.max_loss * 100).toFixed(2) }}%</div>
         </div>
         <div class="metric-item">
+          <div class="metric-label">平均交易时间</div>
+          <div class="metric-value">{{ fmtDays(detail.report.avg_holding_days) }}</div>
+        </div>
+        <div class="metric-item">
           <div class="metric-label">未平仓</div>
           <div class="metric-value">{{ detail.report.unclosed_count }}</div>
         </div>
@@ -227,7 +231,7 @@
         </template>
       </el-alert>
 
-      <el-table :data="trades" v-loading="loadingTrades" stripe style="width: 100%">
+      <el-table :data="trades" v-loading="loadingTrades" stripe style="width: 100%" @sort-change="handleSortChange">
         <el-table-column width="100">
           <template #header>
             <span>代码</span>
@@ -248,17 +252,20 @@
           </template>
         </el-table-column>
         <el-table-column prop="stock_name" label="名称" min-width="90" />
-        <el-table-column prop="buy_date" label="买入日" width="110" />
-        <el-table-column label="买入价" width="90" align="right">
+        <el-table-column prop="buy_date" label="买入日" width="110" sortable="custom" />
+        <el-table-column label="买入价" width="90" align="right" sortable="custom" prop="buy_price">
           <template #default="{ row }">{{ row.buy_price.toFixed(2) }}</template>
         </el-table-column>
-        <el-table-column label="卖出日" width="110">
+        <el-table-column label="卖出日" width="110" sortable="custom" prop="sell_date">
           <template #default="{ row }">{{ row.sell_date ?? '-' }}</template>
         </el-table-column>
-        <el-table-column label="卖出价" width="90" align="right">
+        <el-table-column label="卖出价" width="90" align="right" sortable="custom" prop="sell_price">
           <template #default="{ row }">{{ row.sell_price != null ? row.sell_price.toFixed(2) : '-' }}</template>
         </el-table-column>
-        <el-table-column label="收益率" width="100" align="right">
+        <el-table-column label="交易时间" width="100" align="right" sortable="custom" prop="holding_days">
+          <template #default="{ row }">{{ holdingDaysText(row) }}</template>
+        </el-table-column>
+        <el-table-column label="收益率" width="100" align="right" sortable="custom" prop="return_rate">
           <template #default="{ row }">
             <span v-if="row.return_rate != null" :class="row.return_rate >= 0 ? 'profit' : 'loss'">
               {{ (row.return_rate * 100).toFixed(2) }}%
@@ -378,6 +385,7 @@ const props = defineProps<{ taskId: string }>()
 
 const detail = ref<SimulationTaskDetailResponse | null>(null)
 const trades = ref<SimulationTradeItem[]>([])
+const sortState = ref<{ prop: string; order: 'ascending' | 'descending' | null }>({ prop: 'buy_date', order: 'ascending' })
 const loadingDetail = ref(false)
 const loadingTrades = ref(false)
 const yearlyLoading = ref(false)
@@ -441,6 +449,48 @@ function eastMoneyUrl(row: SimulationTradeItem): string | null {
   return eastMoneyQuoteUrl(row.stock_code, row.exchange)
 }
 
+function _parseDate(s: string | null | undefined): Date | null {
+  if (!s) return null
+  // API 返回 YYYY-MM-DD；按本地时区解析即可（我们只关心自然日差）
+  const d = new Date(`${s}T00:00:00`)
+  return Number.isNaN(d.getTime()) ? null : d
+}
+
+function holdingDays(row: SimulationTradeItem): number | null {
+  if (!row.sell_date) return null
+  const b = _parseDate(row.buy_date)
+  const s = _parseDate(row.sell_date)
+  if (!b || !s) return null
+  const ms = s.getTime() - b.getTime()
+  return Math.round(ms / (24 * 60 * 60 * 1000))
+}
+
+function holdingDaysText(row: SimulationTradeItem): string {
+  const d = holdingDays(row)
+  return d === null ? '-' : `${d} 天`
+}
+
+function fmtDays(v: unknown): string {
+  if (v === null || v === undefined) return '-'
+  const n = Number(v)
+  if (Number.isNaN(n)) return '-'
+  return `${n.toFixed(1)} 天`
+}
+
+function handleSortChange(e: { prop: string; order: 'ascending' | 'descending' | null }) {
+  sortState.value = { prop: e.prop || '', order: e.order }
+  page.value = 1
+  void loadTrades()
+}
+
+function _serverSortParams(): { sort_by?: string; sort_order?: 'asc' | 'desc' } {
+  const { prop, order } = sortState.value
+  if (!prop || !order) return {}
+  const sort_by = prop
+  const sort_order: 'asc' | 'desc' = order === 'descending' ? 'desc' : 'asc'
+  return { sort_by, sort_order }
+}
+
 function tradeTypeQueryParam(): { trade_type?: string } {
   const t = tradeFilters.value.tradeStatus
   return t ? { trade_type: t } : {}
@@ -473,6 +523,7 @@ async function loadTrades() {
       markets: tradeFilters.value.markets.join(','),
       exchanges: tradeFilters.value.exchanges.join(','),
       year: tradeFilters.value.tradeYear,
+      ..._serverSortParams(),
       page: page.value,
       page_size: pageSize,
     })
@@ -548,6 +599,7 @@ function stopPolling() {
 watch(() => props.taskId, () => {
   page.value = 1
   trades.value = []
+  sortState.value = { prop: 'buy_date', order: 'ascending' }
   detail.value = null
   filteredMetrics.value = null
   yearlyItems.value = []

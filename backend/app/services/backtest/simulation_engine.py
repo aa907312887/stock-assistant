@@ -87,6 +87,14 @@ def run_simulation(
         closed_trades = [t for t in trades_to_save if t.trade_type == "closed" and t.return_rate is not None]
         unclosed_count = len([t for t in trades_to_save if t.trade_type == "unclosed"])
 
+        # 平均交易时间：使用自然日（sell_date - buy_date 的日历天数），仅统计已平仓交易
+        holding_days_list: list[int] = []
+        for t in closed_trades:
+            if t.sell_date is None:
+                continue
+            holding_days_list.append((t.sell_date - t.buy_date).days)
+        avg_holding_days = (sum(holding_days_list) / len(holding_days_list)) if holding_days_list else 0.0
+
         if closed_trades:
             returns = [t.return_rate for t in closed_trades]
             total_trades = len(returns)
@@ -134,6 +142,7 @@ def run_simulation(
             "conclusion": conclusion,
             "skip_reasons": result.skip_reasons,
             "portfolio_simulation_applied": False,
+            "avg_holding_days_calendar": round(float(avg_holding_days), 4),
             "temp_level_stats": temp_stats,
             "exchange_stats": exchange_stats,
             "market_stats": market_stats,

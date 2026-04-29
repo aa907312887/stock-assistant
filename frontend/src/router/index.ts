@@ -62,6 +62,11 @@ const router = createRouter({
           component: () => import('@/views/Ma60SlopeBuyView.vue'),
         },
         {
+          path: 'strategy/ma60-five-day-break',
+          name: 'strategy-ma60-five-day-break',
+          component: () => import('@/views/Ma60FiveDayBreakView.vue'),
+        },
+        {
           path: 'strategy/da-yang-hui-luo',
           name: 'strategy-da-yang-hui-luo',
           component: () => import('@/views/DaYangHuiLuoView.vue'),

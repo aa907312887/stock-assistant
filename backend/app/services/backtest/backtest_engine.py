@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import hashlib
 from dataclasses import replace
 from datetime import date, datetime
 
@@ -132,6 +133,8 @@ def run_backtest(
         closed_for_slot = [t for t in enriched_trades if t.trade_type == "closed"]
         unclosed_kept = [t for t in enriched_trades if t.trade_type != "closed"]
         allow_same_day_rebuy = strategy_id == _PANIC_SAME_DAY_REBUY_STRATEGY_ID
+        # 同日多标的择一：用 task_id 派生随机种子，保证单次任务可复现且不同任务不固定同一只。
+        same_day_seed = int.from_bytes(hashlib.sha256(task_id.encode("utf-8")).digest()[:8], "big")
 
         executed_closed, not_traded_rows, portfolio_summary = simulate_single_slot_portfolio(
             closed_for_slot,
@@ -139,6 +142,7 @@ def run_backtest(
             initial_principal=position_amount,
             initial_reserve=reserve_amount,
             allow_rebuy_same_day_as_prior_sell=allow_same_day_rebuy,
+            same_day_pick_seed=same_day_seed,
         )
         combined = executed_closed + not_traded_rows + unclosed_kept
 
@@ -204,6 +208,8 @@ def run_backtest(
             "skip_reasons": result.skip_reasons,
             "portfolio_simulation_applied": True,
             "portfolio_calendar_allow_same_day_rebuy_after_sell": allow_same_day_rebuy,
+            "portfolio_same_day_pick_policy": "random_one",
+            "portfolio_same_day_pick_seed": same_day_seed,
             # 策略层全部闭仓信号加总（含后来被标为 not_traded 的），仅作对照，非资金仿真结果
             "simple_sum_return_closed": float(sum(t.return_rate or 0 for t in closed_for_slot)),
             # 单仓仿真后实际成交闭仓的收益率加总（与明细中 trade_type=closed 一致）

@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from app.services.strategy.strategy_base import StockStrategy
 from app.services.strategy.strategies.bottom_consolidation_breakout import BottomConsolidationBreakoutStrategy
 from app.services.strategy.strategies.chong_gao_hui_luo import ChongGaoHuiLuoStrategy
+from app.services.strategy.strategies.ma60_five_day_break import Ma60FiveDayBreakStrategy
 from app.services.strategy.strategies.ma60_slope_buy import Ma60SlopeBuyStrategy
 from app.services.strategy.strategies.ma_golden_cross import MAGoldenCrossStrategy
 from app.services.strategy.strategies.panic_pullback import PanicPullbackStrategy
@@ -37,6 +38,7 @@ def list_strategies() -> list[StockStrategy]:
         BottomConsolidationBreakoutStrategy(),
         MAGoldenCrossStrategy(),
         Ma60SlopeBuyStrategy(),
+        Ma60FiveDayBreakStrategy(),
         DaYangHuiLuoStrategy(),
         PeValueInvestmentStrategy(),
         DuoTouPaiLieStrategy(),

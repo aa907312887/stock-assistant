@@ -24,17 +24,30 @@ def test_same_buy_date_only_one_executed():
     s = date(2024, 6, 3)
     a = _closed("000001.SZ", d, s, 0.02)
     b = _closed("000002.SZ", d, s, 0.05)
-    ex, nt, summary = simulate_single_slot_portfolio([a, b])
+    ex, nt, summary = simulate_single_slot_portfolio([a, b], same_day_pick_seed=1)
     assert len(ex) == 1
     assert len(nt) == 1
-    assert ex[0].stock_code == "000001.SZ"
-    assert nt[0].stock_code == "000002.SZ"
+    assert ex[0].stock_code in {"000001.SZ", "000002.SZ"}
+    assert nt[0].stock_code in {"000001.SZ", "000002.SZ"}
+    assert ex[0].stock_code != nt[0].stock_code
     assert nt[0].trade_type == "not_traded"
     assert nt[0].return_rate is None
-    assert nt[0].extra.get("hypothetical_return_rate") == 0.05
+    assert nt[0].extra.get("hypothetical_return_rate") in {0.02, 0.05}
     assert nt[0].extra.get("skip_reason") == "same_buy_day"
     assert summary.skipped_closed_count == 1
     assert summary.same_day_not_traded_count == 1
+
+
+def test_same_buy_date_random_pick_is_seeded_and_reproducible():
+    """同日多标的择一：给定 seed 应可复现。"""
+    d = date(2024, 6, 1)
+    s = date(2024, 6, 3)
+    a = _closed("000001.SZ", d, s, 0.02)
+    b = _closed("000002.SZ", d, s, 0.05)
+    ex1, nt1, _ = simulate_single_slot_portfolio([a, b], same_day_pick_seed=123)
+    ex2, nt2, _ = simulate_single_slot_portfolio([a, b], same_day_pick_seed=123)
+    assert ex1[0].stock_code == ex2[0].stock_code
+    assert nt1[0].stock_code == nt2[0].stock_code
 
 
 def test_buy_on_same_day_as_previous_sell_allowed():
