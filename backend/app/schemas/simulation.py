@@ -49,6 +49,35 @@ class SimulationTaskListResponse(BaseModel):
     items: list[SimulationTaskItem]
 
 
+class SimulationMonthWindowStats(BaseModel):
+    """买入后首月（自然日窗口）汇总统计，口径见 assumptions / 页面 Tooltip。"""
+
+    window_calendar_days: int = 30
+    gain_threshold_pct: float = 0.08
+    stop_threshold_pct: float = 0.08
+    ignore_volatility_success_ratio: float = Field(
+        default=0.0,
+        description="不考虑中途下跌成功率：窗口内至少一日收盘价相对买入价达到目标涨幅的笔数 / 本任务已平仓笔数（闭仓总数）",
+    )
+    worst_single_mdd_pct: float = Field(
+        default=0.0,
+        description="各笔「经典最大回撤」中的最差值（一般为负）",
+    )
+    avg_mdd_pct: float = Field(
+        default=0.0,
+        description="各笔经典最大回撤的简单平均",
+    )
+    path_a_count: int = 0
+    path_b_count: int = 0
+    path_c_count: int = 0
+    path_d_count: int = 0
+    path_a_ratio: float = 0.0
+    path_b_ratio: float = 0.0
+    path_c_ratio: float = 0.0
+    path_d_ratio: float = 0.0
+    trades_with_metrics: int = Field(default=0, description="纳入首月统计的已平仓笔数（与闭仓总数一致）")
+
+
 class SimulationReport(BaseModel):
     total_trades: int
     win_trades: int
@@ -64,6 +93,7 @@ class SimulationReport(BaseModel):
     temp_level_stats: list[TempLevelStat] = Field(default_factory=list)
     exchange_stats: list[DimensionStat] = Field(default_factory=list)
     market_stats: list[DimensionStat] = Field(default_factory=list)
+    month_window_stats: SimulationMonthWindowStats | None = None
 
 
 class SimulationTaskDetailResponse(BaseModel):

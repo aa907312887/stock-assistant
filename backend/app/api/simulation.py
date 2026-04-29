@@ -22,6 +22,7 @@ from app.schemas.simulation import (
     BacktestYearlyAnalysisResponse,
     RunSimulationRequest,
     RunSimulationResponse,
+    SimulationMonthWindowStats,
     SimulationReport,
     SimulationTaskDetailResponse,
     SimulationTaskItem,
@@ -96,6 +97,15 @@ def _parse_dimension_stats(raw: object) -> list[DimensionStat]:
             except Exception:
                 continue
     return out
+
+
+def _parse_month_window_stats(raw: object) -> SimulationMonthWindowStats | None:
+    if not isinstance(raw, dict):
+        return None
+    try:
+        return SimulationMonthWindowStats.model_validate(raw)
+    except Exception:
+        return None
 
 
 @router.post("/run")
@@ -231,6 +241,7 @@ def api_get_simulation_task(task_id: str, db: Session = Depends(get_db)):
             temp_level_stats=_parse_temp_level_stats(assumptions_json.get("temp_level_stats")),
             exchange_stats=_parse_dimension_stats(assumptions_json.get("exchange_stats")),
             market_stats=_parse_dimension_stats(assumptions_json.get("market_stats")),
+            month_window_stats=_parse_month_window_stats(assumptions_json.get("month_window_stats")),
         )
         _omit_assumptions = {
             "conclusion",
@@ -238,6 +249,7 @@ def api_get_simulation_task(task_id: str, db: Session = Depends(get_db)):
             "temp_level_stats",
             "exchange_stats",
             "market_stats",
+            "month_window_stats",
         }
         assumptions = {k: v for k, v in assumptions_json.items() if k not in _omit_assumptions}
 
@@ -268,6 +280,10 @@ def api_get_simulation_trades(
     markets: str | None = Query(default=None, description="多选板块，逗号分隔"),
     exchanges: str | None = Query(default=None, description="多选交易所，逗号分隔"),
     year: int | None = Query(default=None, ge=1990, le=2100, description="按买入日自然年筛选"),
+    month_path_kind: str | None = Query(
+        default=None,
+        description="首月路径分类筛选：a/b/c/d（存于 extra_json.month_path_kind）",
+    ),
     sort_by: str | None = Query(
         default="buy_date",
         description="排序字段：buy_date/sell_date/buy_price/sell_price/return_rate/holding_days/stock_code",
@@ -295,6 +311,15 @@ def api_get_simulation_trades(
         exchanges=selected_exchanges,
         buy_year=year,
     )
+
+    if month_path_kind:
+        mp = month_path_kind.strip().lower()
+        if mp in ("a", "b", "c", "d"):
+            # 注意：MySQL JSON 的 contains 在不同方言/驱动下容易出现「看似有值但匹配不到」的问题。
+            # 这里改为显式 JSON_EXTRACT 精确匹配 extra_json.month_path_kind 的字符串值。
+            query = query.filter(
+                func.JSON_UNQUOTE(func.JSON_EXTRACT(SimulationTradeModel.extra_json, "$.month_path_kind")) == mp
+            )
 
     total = query.count()
     # --- 服务端排序：先排序再分页（全量排序，不仅当前页） ---

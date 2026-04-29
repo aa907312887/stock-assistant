@@ -53,6 +53,28 @@ export type DimensionStatRow = {
   avg_return: number
 }
 
+/** 买入后首月（自然日）窗口汇总；与后端 assumptions_json.month_window_stats 一致 */
+export interface SimulationMonthWindowStats {
+  window_calendar_days: number
+  gain_threshold_pct: number
+  stop_threshold_pct: number
+  /** 不考虑中途下跌：窗口内收盘价曾达目标涨幅的笔数 / 本任务已平仓笔数 */
+  ignore_volatility_success_ratio: number
+  /** 各笔经典最大回撤中最差者（一般为负） */
+  worst_single_mdd_pct: number
+  /** 各笔经典最大回撤平均值 */
+  avg_mdd_pct: number
+  path_a_count: number
+  path_b_count: number
+  path_c_count: number
+  path_d_count: number
+  path_a_ratio: number
+  path_b_ratio: number
+  path_c_ratio: number
+  path_d_ratio: number
+  trades_with_metrics: number
+}
+
 export interface SimulationReport {
   total_trades: number
   win_trades: number
@@ -69,6 +91,7 @@ export interface SimulationReport {
   temp_level_stats: TempLevelStat[]
   exchange_stats: DimensionStatRow[]
   market_stats: DimensionStatRow[]
+  month_window_stats?: SimulationMonthWindowStats | null
 }
 
 export interface SimulationTaskDetailResponse {
@@ -141,6 +164,8 @@ export async function getSimulationTrades(
     markets?: string
     exchanges?: string
     year?: number
+    /** 首月路径类型 a/b/c/d */
+    month_path_kind?: string
     sort_by?: string
     sort_order?: 'asc' | 'desc'
     page?: number

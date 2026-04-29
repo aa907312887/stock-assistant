@@ -23,7 +23,20 @@
     </el-card>
 
     <el-card v-if="detail?.report" shadow="never">
-      <template #header><div class="section-title">核心指标</div></template>
+      <template #header>
+        <div class="card-header-row">
+          <span class="section-title">核心指标</span>
+          <el-tooltip v-if="detail.report.month_window_stats" placement="top">
+            <template #content>
+              <div style="max-width: 380px">
+                常规列为策略<strong>实际持仓闭仓</strong>口径；下方「首月」列为买入后连续 30 个<strong>自然日</strong>内、仅用<strong>日线收盘价</strong>相对<strong>买入价</strong>考察的路径指标（与是否卖出无关）。
+                目标涨幅 / 止损线比例可按策略配置（破 60 日均线法默认 ±8%）。路径 A～D 按首次触及「止损收盘线」与「目标收盘线」的时间先后划分。
+              </div>
+            </template>
+            <el-icon class="hint-icon-sm"><QuestionFilled /></el-icon>
+          </el-tooltip>
+        </div>
+      </template>
       <div class="metrics-grid">
         <div class="metric-item">
           <div class="metric-label">总交易数</div>
@@ -66,6 +79,55 @@
           <div class="metric-value">{{ detail.report.unclosed_count }}</div>
         </div>
       </div>
+
+      <template v-if="detail.report.month_window_stats">
+        <div class="metric-subsection-title">
+          买入后首月观察（{{ detail.report.month_window_stats.window_calendar_days }} 个自然日）
+        </div>
+        <div class="metrics-grid metrics-grid--dense">
+          <div class="metric-item">
+            <div class="metric-label">
+              不考虑中途下跌成功率
+              <el-tooltip placement="top">
+                <template #content>
+                  <div style="max-width: 340px">
+                    窗口内任一交易日<strong>收盘价</strong>相对买入价达到<strong>目标涨幅</strong>的笔数 ÷ 本任务<strong>已平仓总笔数</strong>；只看是否曾达标，不考察盘中波动；未凑满窗口行情样本的笔数计入分母且通常不计入分子。
+                  </div>
+                </template>
+                <el-icon class="hint-icon-sm"><QuestionFilled /></el-icon>
+              </el-tooltip>
+            </div>
+            <div class="metric-value">{{ fmtPct1(detail.report.month_window_stats.ignore_volatility_success_ratio) }}</div>
+          </div>
+          <div class="metric-item">
+            <div class="metric-label">
+              单支最大回撤（首月）
+              <el-tooltip placement="top" content="各笔「经典最大回撤」中取最差（最小）值；经典最大回撤指窗口内收盘价相对此前峰值的回撤序列最小值（一般为负）。">
+                <el-icon class="hint-icon-sm"><QuestionFilled /></el-icon>
+              </el-tooltip>
+            </div>
+            <div class="metric-value">{{ fmtPct1(detail.report.month_window_stats.worst_single_mdd_pct) }}</div>
+          </div>
+          <div class="metric-item">
+            <div class="metric-label">
+              策略平均最大回撤（首月）
+              <el-tooltip placement="top" content="每笔经典最大回撤的简单算术平均，反映样本整体回撤深度。">
+                <el-icon class="hint-icon-sm"><QuestionFilled /></el-icon>
+              </el-tooltip>
+            </div>
+            <div class="metric-value">{{ fmtPct1(detail.report.month_window_stats.avg_mdd_pct) }}</div>
+          </div>
+        </div>
+        <div class="path-kind-summary">
+          <span class="path-chip">A {{ pathPctLabel('a') }}</span>
+          <span class="path-chip">B {{ pathPctLabel('b') }}</span>
+          <span class="path-chip">C {{ pathPctLabel('c') }}</span>
+          <span class="path-chip">D {{ pathPctLabel('d') }}</span>
+        </div>
+        <div class="path-kind-legend text-muted">
+          A：首次触及止损收盘线早于首次达标（之后窗口内仍可能再次达标） · B：首次达标早于止损，或未触及止损线即达标 · C：曾触及止损收盘线且窗口内从未达标 · D：窗口内既未触及止损线也未触及目标线（含行情不足）
+        </div>
+      </template>
     </el-card>
 
     <template v-if="detail?.report && (detail.report.temp_level_stats?.length || detail.report.exchange_stats?.length || detail.report.market_stats?.length)">
@@ -210,6 +272,18 @@
             >
               <el-option v-for="y in yearOptions" :key="y" :label="String(y)" :value="y" />
             </el-select>
+            <el-select
+              v-model="tradeFilters.month_path_kind"
+              clearable
+              placeholder="交易结果类型"
+              style="width: 148px"
+              size="small"
+            >
+              <el-option label="A 止损在先" value="a" />
+              <el-option label="B 目标优先" value="b" />
+              <el-option label="C 止损未达标" value="c" />
+              <el-option label="D 均未触发" value="d" />
+            </el-select>
             <el-button size="small" type="primary" @click="handleTradeFilterSearch">筛选</el-button>
             <el-button size="small" @click="handleTradeFilterReset">重置</el-button>
           </div>
@@ -272,6 +346,56 @@
             </span>
             <span v-else>-</span>
           </template>
+        </el-table-column>
+        <el-table-column width="112" align="center">
+          <template #header>
+            <span>一月达标</span>
+            <el-tooltip placement="top" content="买入后首月窗口内，任一交易日收盘价相对买入价是否达到目标涨幅（默认 +8%）。">
+              <el-icon class="hint-icon-sm"><QuestionFilled /></el-icon>
+            </el-tooltip>
+          </template>
+          <template #default="{ row }">{{ fmtMonthBool(monthExtra(row)?.month_target_met) }}</template>
+        </el-table-column>
+        <el-table-column min-width="128" align="right">
+          <template #header>
+            <span>一月经典回撤</span>
+            <el-tooltip placement="top" content="窗口内收盘价相对历史峰值的经典最大回撤（一般为负）；与策略卖出无关，仅描述路径。">
+              <el-icon class="hint-icon-sm"><QuestionFilled /></el-icon>
+            </el-tooltip>
+          </template>
+          <template #default="{ row }">{{ fmtMonthMdd(monthExtra(row)?.month_classic_max_drawdown_pct) }}</template>
+        </el-table-column>
+        <el-table-column min-width="118" align="right">
+          <template #header>
+            <span>一月最大涨幅</span>
+            <el-tooltip placement="top" content="窗口内收盘价相对买入价的最大涨幅。">
+              <el-icon class="hint-icon-sm"><QuestionFilled /></el-icon>
+            </el-tooltip>
+          </template>
+          <template #default="{ row }">{{ fmtMonthGain(monthExtra(row)?.month_max_gain_pct) }}</template>
+        </el-table-column>
+        <el-table-column width="104" align="center">
+          <template #header>
+            <span>触及止损线</span>
+            <el-tooltip placement="top" content="窗口内是否出现过收盘价跌破买入价对应的止损线（默认 −8%，相对买入价）。">
+              <el-icon class="hint-icon-sm"><QuestionFilled /></el-icon>
+            </el-tooltip>
+          </template>
+          <template #default="{ row }">{{ fmtMonthBool(monthExtra(row)?.month_stop_line_hit) }}</template>
+        </el-table-column>
+        <el-table-column min-width="132" align="left">
+          <template #header>
+            <span>交易结果类型</span>
+            <el-tooltip placement="top">
+              <template #content>
+                <div style="max-width: 340px">
+                  买入后首月窗口内，按<strong>收盘价</strong>首次触及「止损线」「目标线」的先后顺序分类（与策略实际卖出无关）。A：止损早于首次达标 · B：达标早于止损，或未触及止损即达标 · C：曾触及止损且窗口内从未达标 · D：两类价格阈值均未触及（含样本不足）。
+                </div>
+              </template>
+              <el-icon class="hint-icon-sm"><QuestionFilled /></el-icon>
+            </el-tooltip>
+          </template>
+          <template #default="{ row }">{{ pathKindDisplay(monthExtra(row)?.month_path_kind) }}</template>
         </el-table-column>
         <el-table-column label="类型" width="80">
           <template #default="{ row }">
@@ -368,7 +492,7 @@
 
 <script setup lang="ts">
 import { ref, watch, onUnmounted, computed } from 'vue'
-import { Loading } from '@element-plus/icons-vue'
+import { Loading, QuestionFilled } from '@element-plus/icons-vue'
 import {
   getSimulationTaskDetail,
   getSimulationTrades,
@@ -401,12 +525,14 @@ const tradeFilters = ref<{
   market_temp_levels: string[]
   markets: string[]
   tradeYear: number | undefined
+  month_path_kind: string | undefined
 }>({
   tradeStatus: undefined,
   exchanges: [],
   market_temp_levels: [],
   markets: [],
   tradeYear: undefined,
+  month_path_kind: undefined,
 })
 
 let pollTimer: ReturnType<typeof setInterval> | null = null
@@ -477,6 +603,56 @@ function fmtDays(v: unknown): string {
   return `${n.toFixed(1)} 天`
 }
 
+function fmtPct1(v: number): string {
+  return `${(v * 100).toFixed(1)}%`
+}
+
+function pathPctLabel(kind: 'a' | 'b' | 'c' | 'd'): string {
+  const s = detail.value?.report?.month_window_stats
+  if (!s) return '—'
+  const map = {
+    a: [s.path_a_count, s.path_a_ratio] as const,
+    b: [s.path_b_count, s.path_b_ratio] as const,
+    c: [s.path_c_count, s.path_c_ratio] as const,
+    d: [s.path_d_count, s.path_d_ratio] as const,
+  }
+  const [n, r] = map[kind]
+  return `${n}笔 (${(r * 100).toFixed(1)}%)`
+}
+
+function monthExtra(row: SimulationTradeItem): Record<string, unknown> | null {
+  const e = row.extra
+  if (!e || typeof e !== 'object') return null
+  return e as Record<string, unknown>
+}
+
+function fmtMonthBool(v: unknown): string {
+  if (v === true) return '是'
+  if (v === false) return '否'
+  return '—'
+}
+
+function fmtMonthMdd(v: unknown): string {
+  if (typeof v !== 'number' || Number.isNaN(v)) return '—'
+  return `${(v * 100).toFixed(2)}%`
+}
+
+function fmtMonthGain(v: unknown): string {
+  if (typeof v !== 'number' || Number.isNaN(v)) return '—'
+  return `${(v * 100).toFixed(2)}%`
+}
+
+function pathKindDisplay(v: unknown): string {
+  const k = typeof v === 'string' ? v.toLowerCase() : ''
+  const labels: Record<string, string> = {
+    a: 'A·止损在先',
+    b: 'B·目标优先',
+    c: 'C·止损未达标',
+    d: 'D·均未触发',
+  }
+  return labels[k] ?? '—'
+}
+
 function handleSortChange(e: { prop: string; order: 'ascending' | 'descending' | null }) {
   sortState.value = { prop: e.prop || '', order: e.order }
   page.value = 1
@@ -523,6 +699,7 @@ async function loadTrades() {
       markets: tradeFilters.value.markets.join(','),
       exchanges: tradeFilters.value.exchanges.join(','),
       year: tradeFilters.value.tradeYear,
+      month_path_kind: tradeFilters.value.month_path_kind,
       ..._serverSortParams(),
       page: page.value,
       page_size: pageSize,
@@ -575,6 +752,7 @@ function handleTradeFilterReset() {
     market_temp_levels: [],
     markets: [],
     tradeYear: undefined,
+    month_path_kind: undefined,
   }
   page.value = 1
   void loadTrades()
@@ -624,6 +802,17 @@ onUnmounted(() => {
 .trade-filters { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 .strategy-desc { white-space: pre-wrap; font-family: inherit; font-size: 13px; line-height: 1.7; color: #3b4a5a; margin: 0; }
 .metrics-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+.metrics-grid--dense { grid-template-columns: repeat(3, 1fr); margin-top: 8px; }
+.metric-subsection-title {
+  margin-top: 20px;
+  margin-bottom: 4px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #606266;
+}
+.path-kind-summary { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 12px; font-size: 13px; }
+.path-chip { padding: 4px 10px; border-radius: 4px; background: var(--el-fill-color-light); }
+.text-muted { font-size: 12px; color: #909399; margin-top: 8px; line-height: 1.5; }
 .metric-item { text-align: center; }
 .metric-label { font-size: 12px; color: #909399; margin-bottom: 4px; }
 .metric-value { font-size: 18px; font-weight: 600; color: #303133; }

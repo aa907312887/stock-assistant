@@ -25,6 +25,7 @@ from app.services.backtest.backtest_report import (
     calculate_market_stats,
     calculate_temp_level_stats,
 )
+from app.services.backtest.simulation_month_metrics import enrich_task_trades_month_window
 from app.services.strategy.registry import get_strategy
 from app.services.strategy.strategy_descriptions import STRATEGY_DESCRIPTIONS
 
@@ -82,6 +83,9 @@ def run_simulation(
                 market_temp_level=trade.market_temp_level,
                 extra_json=trade.extra if trade.extra else None,
             ))
+
+        db.flush()
+        month_payload = enrich_task_trades_month_window(db, task_id=task_id, strategy_id=strategy_id)
 
         # 计算简化指标
         closed_trades = [t for t in trades_to_save if t.trade_type == "closed" and t.return_rate is not None]
@@ -146,6 +150,7 @@ def run_simulation(
             "temp_level_stats": temp_stats,
             "exchange_stats": exchange_stats,
             "market_stats": market_stats,
+            **month_payload,
         }
         task.finished_at = datetime.now()
 

@@ -13,6 +13,7 @@
 |------|------|------|
 | `market_temp_levels` | string，可选 | 多选温度级别，**逗号分隔**，如 `冷,温,热` |
 | `year` | int，可选 | 按**买入日自然年**筛选，范围建议 1990–2100 |
+| `month_path_kind` | string，可选 | 首月路径分类：`a` \| `b` \| `c` \| `d`，对应明细 `extra.month_path_kind`（由后端 `SimulationTrade.extra_json.month_path_kind` 提供） |
 
 语义与 `GET /api/backtest/tasks/{task_id}/trades` 一致（同维 OR、跨维 AND、`markets` 含 `__EMPTY__` 表示空板块）。
 
@@ -22,6 +23,7 @@
 |------|------|------|
 | `market_temp_score` | number \| null | 买入日温度分数 |
 | `market_temp_level` | string \| null | 买入日温度级别 |
+| `extra` | object \| null | 扩展字段；完成首月统计的任务含 `month_target_met`、`month_classic_max_drawdown_pct`、`month_max_gain_pct`、`month_stop_line_hit`、`month_path_kind` 等 |
 
 ---
 
