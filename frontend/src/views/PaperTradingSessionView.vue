@@ -351,6 +351,89 @@
             <el-empty v-if="store.screenResult.items.length === 0" description="暂无结果" :image-size="50" />
           </div>
         </el-tab-pane>
+
+        <el-tab-pane label="策略" name="strategy">
+          <div class="strategy-pick-panel">
+            <el-alert
+              v-if="store.isSessionActive && store.isOpenPhase"
+              type="warning"
+              show-icon
+              :closable="false"
+              class="strategy-phase-alert"
+              title="请先点击左侧「推进到收盘 →」后再查看策略候选，避免在开盘阶段暴露全日收盘形态信息。"
+            />
+            <div class="strategy-pick-header">
+              <div class="strategy-pick-title-row">
+                <span class="strategy-pick-title">内置策略选股</span>
+                <el-tooltip placement="top" :show-after="200">
+                  <template #content>
+                    <div style="max-width: 280px; line-height: 1.6">
+                      仅<strong>收盘后</strong>可查：选股依赖当日完整收盘数据，开盘阶段不提供查询（与 K 线未收盘掩码一致）。按<strong>当前模拟日</strong>与所选内置策略的<strong>选股（execute）</strong>口径列出候选（如破60日均线：当日收盘站上 MA60 且前 5 根均在下方）。推进收盘后若本会话内曾查询过本标签，会自动刷新。本接口<strong>不落库</strong>策略专题「执行」快照。
+                    </div>
+                  </template>
+                  <el-icon class="strategy-pick-help" tabindex="0" aria-label="策略选股说明"><QuestionFilled /></el-icon>
+                </el-tooltip>
+              </div>
+              <el-select
+                v-model="strategyPickStrategyId"
+                placeholder="选择内置策略"
+                filterable
+                style="width: 100%"
+                size="small"
+                :disabled="!store.isSessionActive || store.isOpenPhase"
+              >
+                <el-option
+                  v-for="s in strategies"
+                  :key="s.strategy_id"
+                  :label="s.name"
+                  :value="s.strategy_id"
+                />
+              </el-select>
+              <el-button
+                type="primary"
+                size="small"
+                style="width: 100%; margin-top: 8px"
+                :loading="store.strategyPickLoading"
+                :disabled="!store.isSessionActive || store.isOpenPhase || !strategyPickStrategyId"
+                @click="runStrategyPick"
+              >
+                查询当日候选
+              </el-button>
+            </div>
+            <template v-if="store.isClosePhase">
+              <div v-if="store.strategyPickResult && store.strategyPickResult.total > 0" class="screen-result-count">
+                共 {{ store.strategyPickResult.total }} 支 · {{ store.strategyPickResult.strategy_name }}
+              </div>
+              <div v-loading="store.strategyPickLoading" class="stock-list strategy-pick-list">
+                <div
+                  v-for="item in store.strategyPickResult?.items ?? []"
+                  :key="item.stock_code"
+                  class="stock-item"
+                >
+                  <div class="stock-info" @click="selectStock(item.stock_code)">
+                    <span class="stock-code">{{ item.stock_code }}</span>
+                    <span class="stock-name">{{ item.stock_name }}</span>
+                    <span class="stock-pct" :class="pctClass(item.pct_change)">
+                      {{ formatPct(item.pct_change) }}
+                    </span>
+                  </div>
+                  <el-button size="small" type="primary" plain :disabled="!store.isSessionActive" @click="openBuyDialog(item)">
+                    买入
+                  </el-button>
+                </div>
+              </div>
+              <el-empty
+                v-if="
+                  store.strategyPickResult &&
+                  store.strategyPickResult.total === 0 &&
+                  !store.strategyPickLoading
+                "
+                description="当日该策略无候选标的"
+                :image-size="50"
+              />
+            </template>
+          </div>
+        </el-tab-pane>
       </el-tabs>
     </div>
     </div><!-- /.session-main -->
@@ -630,8 +713,15 @@ import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { usePaperTradingStore } from '@/stores/paperTrading'
-import { paperTradingApi } from '@/api/paperTrading'
+import {
+  paperTradingApi,
+  fetchPaperTradingStrategyPicks,
+  paperTradingErrorMessage,
+} from '@/api/paperTrading'
+import { listStrategies, type StrategySummary } from '@/api/strategies'
+import { QuestionFilled } from '@element-plus/icons-vue'
 import type {
+  ChartBar,
   ClosedStockSummary,
   OrderResponse,
   PaperStockInfoResponse,
@@ -658,6 +748,9 @@ const chartPeriod = ref('daily')
 const stockInput = ref('')
 const selectedStock = ref('')
 const rightTab = ref('recommend')
+const strategies = ref<StrategySummary[]>([])
+/** 右侧「策略」标签所选 strategy_id */
+const strategyPickStrategyId = ref('')
 const tradeLoading = ref(false)
 
 const screenForm = ref({
@@ -792,10 +885,38 @@ function onPhaseAdvanceHotkey(ev: KeyboardEvent) {
   else void store.nextDay()
 }
 
+async function runStrategyPick() {
+  const sid = strategyPickStrategyId.value
+  const sess = store.currentSession
+  if (!sid || !sess) return
+  if (store.isOpenPhase) {
+    ElMessage.warning('请先推进到收盘后再查看策略候选')
+    return
+  }
+  store.strategyPickLoading = true
+  try {
+    store.strategyPickResult = await fetchPaperTradingStrategyPicks(sess, sid)
+    store.strategyLastPickId = sid
+  } catch (e: unknown) {
+    store.strategyPickResult = null
+    ElMessage.error(paperTradingErrorMessage(e, '策略选股加载失败'))
+  } finally {
+    store.strategyPickLoading = false
+  }
+}
+
 onMounted(async () => {
   // 动态导入 echarts 以减少初始包大小
   echarts = await import('echarts')
   await store.loadSession(sessionId)
+  try {
+    const res = await listStrategies()
+    strategies.value = res.items
+    const preferred = res.items.find((x) => x.strategy_id === 'ma60_five_day_break')
+    strategyPickStrategyId.value = preferred?.strategy_id ?? res.items[0]?.strategy_id ?? ''
+  } catch {
+    strategies.value = []
+  }
   if (store.isSessionActive) await store.loadRecommend()
   window.addEventListener('keydown', onPhaseAdvanceHotkey)
 })
@@ -803,6 +924,17 @@ onMounted(async () => {
 onUnmounted(() => {
   window.removeEventListener('keydown', onPhaseAdvanceHotkey)
 })
+
+/** 进入开盘阶段即清空策略列表，避免短暂停留上一状态 */
+watch(
+  () => store.isOpenPhase,
+  (open) => {
+    if (open) {
+      store.strategyPickResult = null
+      store.strategyLastPickId = null
+    }
+  },
+)
 
 watch(() => store.chartData, async (data) => {
   if (!data) return
@@ -844,6 +976,90 @@ function initialDataZoomPercent(period: string, pointCount: number): { start: nu
   return { start: Math.max(0, Math.min(100, start)), end: 100 }
 }
 
+function fmtTooltipPrice(v: number | null | undefined): string {
+  if (v == null || Number.isNaN(Number(v))) return '—'
+  return Number(v).toFixed(3)
+}
+
+function fmtTooltipVol(v: number | null | undefined): string {
+  if (v == null || Number.isNaN(Number(v))) return '—'
+  const n = Number(v)
+  if (n >= 1e8) return `${(n / 1e8).toFixed(2)} 亿`
+  if (n >= 1e4) return `${(n / 1e4).toFixed(2)} 万`
+  return n.toFixed(0)
+}
+
+/** 悬浮用涨跌幅：优先接口字段，否则用收盘价相对昨收推算（与日线口径一致） */
+function effectiveTooltipPctChange(bar: ChartBar): number | null {
+  if (bar.pct_change != null && !Number.isNaN(Number(bar.pct_change))) {
+    return Number(bar.pct_change)
+  }
+  const prev = bar.prev_close
+  const cl = bar.close
+  if (prev != null && prev > 0 && cl != null && !Number.isNaN(Number(cl))) {
+    return (Number(cl) / prev - 1) * 100
+  }
+  return null
+}
+
+/** 坐标轴联动悬浮：统一中文指标名（避免 ECharts 默认英文维度名） */
+function formatAxisTooltip(
+  params: unknown,
+  chartPayload: NonNullable<typeof store.chartData>,
+): string {
+  const plist = params as Array<{
+    axisValue?: string
+    dataIndex?: number
+    seriesName?: string
+    value?: unknown
+  }>
+  if (!plist?.length) return ''
+  const kItem = plist.find(p => p.seriesName === 'K线')
+  const di = kItem?.dataIndex ?? plist[0]?.dataIndex ?? 0
+  const bar = chartPayload.data[di] as ChartBar | undefined
+  const rows: string[] = []
+  rows.push(bar?.date ?? String(plist[0]?.axisValue ?? ''))
+  if (bar) {
+    rows.push(`开盘价：${fmtTooltipPrice(bar.open)}`)
+    rows.push(`收盘价：${bar.close != null ? fmtTooltipPrice(bar.close) : '—（未揭晓）'}`)
+    rows.push(`最高价：${bar.high != null ? fmtTooltipPrice(bar.high) : '—（未揭晓）'}`)
+    rows.push(`最低价：${bar.low != null ? fmtTooltipPrice(bar.low) : '—（未揭晓）'}`)
+    const pct = effectiveTooltipPctChange(bar)
+    rows.push(
+      pct != null && !Number.isNaN(pct)
+        ? `涨跌幅：${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%`
+        : '涨跌幅：—（未揭晓）',
+    )
+    rows.push(`成交量：${bar.volume != null ? fmtTooltipVol(bar.volume) : '—（未揭晓）'}`)
+    if (bar.prev_close != null) rows.push(`昨收：${fmtTooltipPrice(bar.prev_close)}`)
+  }
+  const maNames = ['MA5', 'MA10', 'MA20', 'MA60']
+  for (const p of plist) {
+    const sn = p.seriesName ?? ''
+    if (maNames.includes(sn) && typeof p.value === 'number' && !Number.isNaN(p.value)) {
+      rows.push(`${sn}：${p.value.toFixed(3)}`)
+    }
+  }
+  const macdParts: string[] = []
+  for (const p of plist) {
+    const sn = p.seriesName ?? ''
+    if (sn === 'DIF' || sn === 'DEA') {
+      const v = typeof p.value === 'number' ? p.value : null
+      if (v != null && !Number.isNaN(v)) macdParts.push(`${sn}：${v.toFixed(4)}`)
+    }
+    if (sn === 'MACD') {
+      const v = typeof p.value === 'number' ? p.value : null
+      if (v != null && !Number.isNaN(v)) macdParts.push(`MACD柱：${v.toFixed(4)}`)
+    }
+  }
+  if (macdParts.length) {
+    rows.push('MACD')
+    rows.push(...macdParts)
+  }
+  // ECharts 6 默认 rich/canvas tooltip 不把 \n 当换行；HTML 模式用 <br/> 保证每项独占一行
+  return rows.join('<br/>')
+}
+
 function renderChart(data: typeof store.chartData) {
   if (!data || !chartInstance) return
   const dates = data.data.map(d => d.date)
@@ -859,7 +1075,12 @@ function renderChart(data: typeof store.chartData) {
 
   chartInstance.setOption({
     animation: false,
-    tooltip: { trigger: 'axis', axisPointer: { type: 'cross' } },
+    tooltip: {
+      trigger: 'axis',
+      axisPointer: { type: 'cross' },
+      renderMode: 'html',
+      formatter: (p: unknown) => formatAxisTooltip(p, data),
+    },
     legend: { data: ['MA5', 'MA10', 'MA20', 'MA60'], top: 4, textStyle: { fontSize: 11 } },
     grid: [
       { left: 60, right: 20, top: 36, height: '52%' },
@@ -891,7 +1112,7 @@ function renderChart(data: typeof store.chartData) {
               label: {
                 show: true,
                 position: 'end',
-                formatter: () => `开盘 ${(data!.open_price as number).toFixed(3)}`,
+                formatter: () => `开盘价：${(data!.open_price as number).toFixed(3)}`,
                 color: '#b88230',
                 fontSize: 11,
               },
@@ -1380,6 +1601,26 @@ function formatPct(pct: number | null) { return pct === null ? '-' : (pct >= 0 ?
 .tab-toolbar { padding: 6px 12px; border-bottom: 1px solid #ebeef5; }
 .screen-form { padding: 8px 12px; border-bottom: 1px solid #ebeef5; }
 .screen-result-count { padding: 4px 12px; font-size: 12px; color: #909399; }
+.strategy-pick-panel { display: flex; flex-direction: column; height: 100%; overflow: hidden; }
+.strategy-phase-alert {
+  margin: 0 8px 8px;
+  flex-shrink: 0;
+}
+.strategy-pick-header {
+  flex-shrink: 0;
+  padding: 8px 12px 10px;
+  border-bottom: 1px solid #ebeef5;
+}
+.strategy-pick-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.strategy-pick-title { font-size: 13px; font-weight: 600; color: #303133; }
+.strategy-pick-help { color: #909399; cursor: help; font-size: 16px; flex-shrink: 0; }
+.strategy-pick-list { flex: 1; min-height: 60px; }
 .stock-list { flex: 1; overflow-y: auto; padding: 4px 8px; }
 .stock-item { display: flex; align-items: center; justify-content: space-between; padding: 6px 4px; border-bottom: 1px solid #f2f6fc; }
 .stock-info { flex: 1; cursor: pointer; }

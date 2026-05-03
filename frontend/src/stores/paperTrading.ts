@@ -1,13 +1,18 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { ElMessage } from 'element-plus'
-import { paperTradingApi } from '@/api/paperTrading'
+import {
+  paperTradingApi,
+  fetchPaperTradingStrategyPicks,
+  paperTradingErrorMessage,
+} from '@/api/paperTrading'
 import type {
   SessionResponse,
   SessionListItem,
   ChartDataResponse,
   StockQuote,
   ScreenParams,
+  StrategyPickResponse,
 } from '@/api/paperTrading'
 
 export const usePaperTradingStore = defineStore('paperTrading', () => {
@@ -17,6 +22,11 @@ export const usePaperTradingStore = defineStore('paperTrading', () => {
   const chartData = ref<ChartDataResponse | null>(null)
   const recommendList = ref<StockQuote[]>([])
   const screenResult = ref<{ total: number; items: StockQuote[] }>({ total: 0, items: [] })
+  /** 右侧「策略」标签最近一次查询结果；会话切换或下一日时清空 */
+  const strategyPickResult = ref<StrategyPickResponse | null>(null)
+  const strategyPickLoading = ref(false)
+  /** 推进收盘后若曾查询过策略列表则自动用同一策略刷新 */
+  const strategyLastPickId = ref<string | null>(null)
   const loading = ref(false)
   const chartLoading = ref(false)
 
@@ -47,6 +57,8 @@ export const usePaperTradingStore = defineStore('paperTrading', () => {
           realized_profit_loss_pct: c.realized_profit_loss_pct ?? 0,
         })),
       }
+      strategyPickResult.value = null
+      strategyLastPickId.value = null
     } catch (e: any) {
       ElMessage.error(e?.response?.data?.detail?.message || '加载会话失败')
     } finally {
@@ -84,6 +96,18 @@ export const usePaperTradingStore = defineStore('paperTrading', () => {
       if (chartData.value) {
         await loadChartData(chartData.value.stock_code)
       }
+      const sid = strategyLastPickId.value
+      if (sid && currentSession.value) {
+        strategyPickLoading.value = true
+        try {
+          strategyPickResult.value = await fetchPaperTradingStrategyPicks(currentSession.value, sid)
+        } catch (e: unknown) {
+          strategyPickResult.value = null
+          ElMessage.error(paperTradingErrorMessage(e, '策略选股刷新失败'))
+        } finally {
+          strategyPickLoading.value = false
+        }
+      }
     } catch (e: any) {
       ElMessage.error(e?.response?.data?.detail?.message || '操作失败')
     } finally {
@@ -112,6 +136,8 @@ export const usePaperTradingStore = defineStore('paperTrading', () => {
         market_temp_level: res.data.market_temp_level ?? null,
       }
       ElMessage.success(`已进入 ${res.data.current_date} 开盘`)
+      strategyPickResult.value = null
+      strategyLastPickId.value = null
       // 刷新推荐和图表
       await loadRecommend()
       if (chartData.value) {
@@ -215,6 +241,9 @@ export const usePaperTradingStore = defineStore('paperTrading', () => {
     chartData,
     recommendList,
     screenResult,
+    strategyPickResult,
+    strategyPickLoading,
+    strategyLastPickId,
     loading,
     chartLoading,
     isOpenPhase,

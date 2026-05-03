@@ -1,6 +1,6 @@
 """历史模拟交易业务逻辑服务。
 
-负责：会话管理、买入/卖出（含 FIFO、T+1、涨跌停验证）、
+负责：会话管理、买入/卖出（含 FIFO、T+1；个股不设统一涨跌停校验）、
 推进到收盘、进入下一交易日、图表数据、推荐/筛选股票。
 """
 
@@ -47,6 +47,7 @@ from app.schemas.paper_trading import (
     PositionSummary,
     RecommendResponse,
     ScreenResponse,
+    StrategyPickResponse,
     SessionListItem,
     SessionListResponse,
     SessionResponse,
@@ -65,8 +66,6 @@ logger = logging.getLogger(__name__)
 BUY_COMMISSION_RATE = Decimal("0.0003")   # 买入手续费 0.03%
 SELL_COMMISSION_RATE = Decimal("0.0013")  # 卖出手续费 0.13%（含印花税）
 MIN_COMMISSION = Decimal("5.0")           # 最低手续费 5 元
-LIMIT_RATE = Decimal("0.10")             # 涨跌停幅度 10%
-
 
 # ---------- 内部工具 ----------
 
@@ -183,28 +182,6 @@ def _market_temperature_prev_trading_day(
     if row is None:
         return prev_td, None, None
     return prev_td, float(row.temperature_score), row.temperature_level
-
-
-def _calc_limits(prev_close: Decimal) -> tuple[Decimal, Decimal]:
-    """计算涨停价和跌停价（±10%，保留两位小数）。"""
-    limit_up = (prev_close * (1 + LIMIT_RATE)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-    limit_down = (prev_close * (1 - LIMIT_RATE)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-    return limit_up, limit_down
-
-
-def _validate_price(price: Decimal, prev_close: Decimal) -> None:
-    """验证价格在涨跌停范围内。"""
-    limit_up, limit_down = _calc_limits(prev_close)
-    if price > limit_up or price < limit_down:
-        raise HTTPException(
-            status_code=400,
-            detail={
-                "code": "PRICE_OUT_OF_LIMIT",
-                "message": f"价格超出涨跌停范围（{float(limit_down)} ~ {float(limit_up)}）",
-                "limit_up": float(limit_up),
-                "limit_down": float(limit_down),
-            },
-        )
 
 
 def _build_position_summaries(
@@ -581,7 +558,7 @@ def buy(
     price: float,
     quantity: int,
 ) -> dict:
-    """买入股票。验证停牌、涨跌停、资金，FIFO 写入持仓批次和交易记录。"""
+    """买入股票。验证停牌、资金；个股不设涨跌停价校验（板块幅度不一），FIFO 写入持仓批次和交易记录。"""
     session = _get_session_or_404(db, session_id)
     if _session_is_ended(session):
         raise HTTPException(status_code=400, detail={"code": "SESSION_NOT_ACTIVE", "message": "会话已结束"})
@@ -590,13 +567,6 @@ def buy(
     is_index, bar = _get_quote_bar_for_day(db, stock_code, session.current_date)
 
     price_dec = Decimal(str(price))
-    if not is_index:
-        if bar.prev_close is None:
-            raise HTTPException(
-                status_code=400,
-                detail={"code": "NO_PREV_CLOSE", "message": "缺少前收盘价，无法验证涨跌停"},
-            )
-        _validate_price(price_dec, bar.prev_close)
 
     amount = price_dec * quantity
     commission = _calc_commission(amount, BUY_COMMISSION_RATE)
@@ -681,7 +651,7 @@ def sell(
     price: float,
     quantity: int,
 ) -> dict:
-    """卖出股票。验证停牌、涨跌停、T+1，FIFO 扣减持仓，写入交易记录。"""
+    """卖出股票。验证停牌、T+1；个股不设涨跌停价校验，FIFO 扣减持仓，写入交易记录。"""
     session = _get_session_or_404(db, session_id)
     if _session_is_ended(session):
         raise HTTPException(status_code=400, detail={"code": "SESSION_NOT_ACTIVE", "message": "会话已结束"})
@@ -690,13 +660,6 @@ def sell(
     is_index, bar = _get_quote_bar_for_day(db, stock_code, session.current_date)
 
     price_dec = Decimal(str(price))
-    if not is_index:
-        if bar.prev_close is None:
-            raise HTTPException(
-                status_code=400,
-                detail={"code": "NO_PREV_CLOSE", "message": "缺少前收盘价，无法验证涨跌停"},
-            )
-        _validate_price(price_dec, bar.prev_close)
 
     # 查询可卖批次（排除当日买入，按 buy_date ASC, id ASC 排序 = FIFO）
     sellable_batches = (
@@ -942,7 +905,7 @@ def _get_chart_data_index(
                     close=None if hide else (float(r.close) if r.close else None),
                     volume=None if hide else (float(r.volume) if r.volume else None),
                     prev_close=float(r.prev_close) if r.prev_close else None,
-                    pct_change=None if hide else (float(r.pct_change) if r.pct_change else None),
+                    pct_change=None if hide else (float(r.pct_change) if r.pct_change is not None else None),
                     ma5=float(r.ma5) if r.ma5 else None,
                     ma10=float(r.ma10) if r.ma10 else None,
                     ma20=float(r.ma20) if r.ma20 else None,
@@ -1096,7 +1059,7 @@ def get_chart_data(
                 close=None if hide else (float(r.close) if r.close else None),
                 volume=None if hide else (float(r.volume) if r.volume else None),
                 prev_close=float(r.prev_close) if r.prev_close else None,
-                pct_change=None if hide else (float(r.pct_change) if r.pct_change else None),
+                pct_change=None if hide else (float(r.pct_change) if r.pct_change is not None else None),
                 ma5=float(r.ma5) if r.ma5 else None,
                 ma10=float(r.ma10) if r.ma10 else None,
                 ma20=float(r.ma20) if r.ma20 else None,
@@ -1114,10 +1077,6 @@ def get_chart_data(
         if today_bar:
             open_price = float(today_bar.open) if today_bar.open else None
             close_price = float(today_bar.close) if (phase == "close" and today_bar.close) else None
-            if today_bar.prev_close:
-                lu, ld = _calc_limits(today_bar.prev_close)
-                limit_up = float(lu)
-                limit_down = float(ld)
 
     return ChartDataResponse(
         stock_code=stock_code,
@@ -1362,22 +1321,15 @@ def recommend_stocks(
         except Exception:
             pass
 
-        if bar.prev_close:
-            lu, ld = _calc_limits(bar.prev_close)
-            limit_up = float(lu)
-            limit_down = float(ld)
-        else:
-            limit_up = limit_down = None
-
         items.append(StockQuote(
             stock_code=bar.stock_code,
             stock_name=stock_name,
             open=float(bar.open) if bar.open else None,
             close=float(bar.close) if (phase == "close" and bar.close) else None,
-            pct_change=float(bar.pct_change) if (phase == "close" and bar.pct_change) else None,
+            pct_change=float(bar.pct_change) if (phase == "close" and bar.pct_change is not None) else None,
             volume=float(bar.volume) if bar.volume else None,
-            limit_up=limit_up,
-            limit_down=limit_down,
+            limit_up=None,
+            limit_down=None,
         ))
 
     return RecommendResponse(trade_date=trade_date, phase=phase, items=items)
@@ -1431,25 +1383,110 @@ def screen_stocks(
         except Exception:
             pass
 
-        if bar.prev_close:
-            lu, ld = _calc_limits(bar.prev_close)
-            limit_up = float(lu)
-            limit_down = float(ld)
-        else:
-            limit_up = limit_down = None
-
         items.append(StockQuote(
             stock_code=bar.stock_code,
             stock_name=stock_name,
             open=float(bar.open) if bar.open else None,
             close=float(bar.close) if bar.close else None,
-            pct_change=float(bar.pct_change) if bar.pct_change else None,
+            pct_change=float(bar.pct_change) if bar.pct_change is not None else None,
             volume=float(bar.volume) if bar.volume else None,
-            limit_up=limit_up,
-            limit_down=limit_down,
+            limit_up=None,
+            limit_down=None,
         ))
 
     return ScreenResponse(trade_date=trade_date, total=total, page=page, page_size=page_size, items=items)
+
+
+def strategy_pick_stocks(
+    db: Session,
+    trade_date: date,
+    phase: str,
+    strategy_id: str,
+) -> StrategyPickResponse:
+    """
+    按内置策略的 execute（选股）口径，列出 trade_date 当日候选股，并拼接 stock_daily_bar 展示字段。
+
+    不写策略执行快照库；无日表行情的代码（如指数-only 候选）跳过。
+    仅允许 phase=close：选股结果隐含全日形态与收盘价信息，开盘阶段不得查看（与 FR-010c 一致）。
+    """
+    from app.services.strategy.registry import get_strategy
+
+    phase_norm = (phase or "").strip().lower()
+    if phase_norm != "close":
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "PHASE_MUST_BE_CLOSE",
+                "message": "策略选股仅在当日收盘后可查看，请先点击「推进到收盘」。",
+            },
+        )
+
+    strategy = get_strategy(strategy_id)
+    if strategy is None:
+        raise HTTPException(
+            status_code=404,
+            detail={"code": "STRATEGY_NOT_FOUND", "message": f"策略不存在: {strategy_id}"},
+        )
+
+    desc = strategy.describe()
+    try:
+        result = strategy.execute(as_of_date=trade_date)
+    except Exception as e:
+        logger.exception("模拟交易-策略选股失败: strategy_id=%s trade_date=%s", strategy_id, trade_date)
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "STRATEGY_EXECUTE_FAILED", "message": str(e)},
+        ) from e
+
+    codes = [c.stock_code for c in result.items]
+    if not codes:
+        return StrategyPickResponse(
+            trade_date=trade_date,
+            phase="close",
+            strategy_id=strategy_id,
+            strategy_name=desc.name,
+            total=0,
+            items=[],
+        )
+
+    bars = (
+        db.query(StockDailyBar)
+        .filter(StockDailyBar.trade_date == trade_date, StockDailyBar.stock_code.in_(codes))
+        .all()
+    )
+    bar_by_code = {b.stock_code: b for b in bars}
+
+    ordered = sorted(result.items, key=lambda x: x.stock_code)
+    items: list[StockQuote] = []
+    for cand in ordered:
+        bar = bar_by_code.get(cand.stock_code)
+        if bar is None:
+            continue
+        stock_name = cand.stock_name
+        if not stock_name:
+            basic = db.query(StockBasic).filter(StockBasic.code == cand.stock_code).first()
+            stock_name = basic.name if basic else cand.stock_code
+        items.append(
+            StockQuote(
+                stock_code=bar.stock_code,
+                stock_name=stock_name,
+                open=float(bar.open) if bar.open else None,
+                close=float(bar.close) if bar.close else None,
+                pct_change=float(bar.pct_change) if bar.pct_change is not None else None,
+                volume=float(bar.volume) if bar.volume else None,
+                limit_up=None,
+                limit_down=None,
+            ),
+        )
+
+    return StrategyPickResponse(
+        trade_date=trade_date,
+        phase="close",
+        strategy_id=strategy_id,
+        strategy_name=desc.name,
+        total=len(items),
+        items=items,
+    )
 
 
 def get_trading_dates(db: Session, start: date, end: date) -> TradingDatesResponse:

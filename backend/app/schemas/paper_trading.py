@@ -224,6 +224,17 @@ class ScreenResponse(BaseModel):
     items: list[StockQuote]
 
 
+class StrategyPickResponse(BaseModel):
+    """当前模拟日下，某内置策略 execute（选股）口径的候选股列表（拼装当日行情展示）。"""
+
+    trade_date: date
+    phase: str
+    strategy_id: str
+    strategy_name: str
+    total: int
+    items: list[StockQuote]
+
+
 # ---------- 交易日列表 ----------
 
 class TradingDatesResponse(BaseModel):

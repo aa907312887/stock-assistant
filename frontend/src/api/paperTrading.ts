@@ -1,4 +1,9 @@
+import axios from 'axios'
+
 import http from './http'
+
+/** 策略选股接口在后端需扫描大量日线，10s 默认超时极易误判为「无响应」 */
+const STRATEGY_PICKS_TIMEOUT_MS = 180_000
 
 // ---------- Types ----------
 
@@ -171,6 +176,16 @@ export interface ScreenResponse {
   items: StockQuote[]
 }
 
+/** 内置策略选股（execute 口径），与模拟日行情拼装 */
+export interface StrategyPickResponse {
+  trade_date: string
+  phase: string
+  strategy_id: string
+  strategy_name: string
+  total: number
+  items: StockQuote[]
+}
+
 export interface TradingDatesResponse {
   dates: string[]
   min_date: string
@@ -312,6 +327,48 @@ export const paperTradingApi = {
   screen: (params: ScreenParams) =>
     http.get<ScreenResponse>('/paper-trading/screen', { params }),
 
+  strategyPicks: (params: { trade_date: string; phase: string; strategy_id: string }) =>
+    http.get<StrategyPickResponse>('/paper-trading/strategy-picks', {
+      params,
+      timeout: STRATEGY_PICKS_TIMEOUT_MS,
+    }),
+
   getTradingDates: (params: { start: string; end: string }) =>
     http.get<TradingDatesResponse>('/paper-trading/trading-dates', { params }),
+}
+
+/**
+ * 历史模拟交易：按内置策略拉取当日候选（仅 phase=close；开盘请求会被后端拒绝）。
+ * 独立导出供页面直接调用，避免开发热更新后 Pinia store 上尚未挂载新 action。
+ */
+export async function fetchPaperTradingStrategyPicks(
+  session: Pick<SessionResponse, 'current_date' | 'current_phase'>,
+  strategyId: string,
+): Promise<StrategyPickResponse> {
+  const res = await paperTradingApi.strategyPicks({
+    trade_date: session.current_date,
+    phase: session.current_phase,
+    strategy_id: strategyId,
+  })
+  return res.data
+}
+
+/** 解析模拟交易相关请求的报错文案（含超时、无 response 的网络错误） */
+export function paperTradingErrorMessage(error: unknown, fallback: string): string {
+  if (axios.isAxiosError(error)) {
+    const code = error.code
+    const msg = error.message ?? ''
+    if (code === 'ECONNABORTED' || msg.toLowerCase().includes('timeout')) {
+      return '请求超时：策略选股需在服务端扫描大量行情，耗时较长。请稍后重试；若仍失败可检查网络或服务负载。'
+    }
+    if (!error.response) {
+      return '网络异常或服务不可达，请检查连接后重试。'
+    }
+    const detail = error.response.data?.detail as unknown
+    if (detail != null && typeof detail === 'object' && 'message' in detail) {
+      return String((detail as { message: unknown }).message)
+    }
+    if (typeof detail === 'string') return detail
+  }
+  return fallback
 }

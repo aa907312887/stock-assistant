@@ -253,7 +253,6 @@
 
 **错误**：
 - `400 STOCK_SUSPENDED`：股票当日停牌（无数据）
-- `400 PRICE_OUT_OF_LIMIT`：价格超出涨跌停范围，附带 `limit_up` 和 `limit_down` 字段
 - `400 INVALID_QUANTITY`：数量不是 100 的整数倍
 - `400 INSUFFICIENT_CASH`：资金不足，附带 `required` 和 `available` 字段
 - `400 SESSION_NOT_ACTIVE`：会话已结束
@@ -289,7 +288,6 @@
 
 **错误**：
 - `400 STOCK_SUSPENDED`：股票当日停牌
-- `400 PRICE_OUT_OF_LIMIT`：价格超出涨跌停范围
 - `400 INVALID_QUANTITY`：数量不是 100 的整数倍
 - `400 T1_RESTRICTION`：当日买入的股票不可当日卖出
 - `400 INSUFFICIENT_POSITION`：持仓不足，附带 `available_quantity` 字段
@@ -379,12 +377,12 @@
       "macd_hist": 0.0494
     }
   ],
-  "limit_up": 21.78,
-  "limit_down": 17.82
+  "limit_up": null,
+  "limit_down": null
 }
 ```
 
-> `limit_up` / `limit_down`：当日（end_date）的涨跌停价格，方便前端展示快捷填充按钮
+> **个股** `chart-data` 响应中 `limit_up` / `limit_down` 恒为 `null`（不设统一 ±10% 展示与校验）；**指数** K 线无此项语义。
 
 ---
 
@@ -455,12 +453,14 @@
       "close": null,
       "pct_change": null,
       "volume": 1234567,
-      "limit_up": 21.78,
-      "limit_down": 17.82
+      "limit_up": null,
+      "limit_down": null
     }
   ]
 }
 ```
+
+> 个股推荐项中 `limit_up` / `limit_down` 恒为 `null`（不设交易所差异化涨跌停展示）。
 
 ---
 
@@ -501,12 +501,66 @@
       "ma10": 19.80,
       "macd_dif": 0.1234,
       "macd_dea": 0.0987,
-      "limit_up": 21.78,
-      "limit_down": 17.82
+      "limit_up": null,
+      "limit_down": null
     }
   ]
 }
 ```
+
+> 筛选列表项中 `limit_up` / `limit_down` 恒为 `null`。
+
+---
+
+## 11.1 按内置策略列出当日候选（选股 execute 口径）
+
+**GET** `/api/paper-trading/strategy-picks`
+
+**说明**：供会话页右侧「策略」标签使用。在 **trade_date** 上调用对应内置策略的 **`execute(as_of_date)`** 选股逻辑，将候选与当日 `stock_daily_bar` 拼装为 `StockQuote` 列表。**不**写入策略专题的 `strategy_execution` / `strategy_selection_item` 等表。
+
+**查询参数**：
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `trade_date` | string | 是 | 当前模拟日（YYYY-MM-DD） |
+| `phase` | string | 是 | **必须为 `close`**。开盘阶段调用返回 `400 PHASE_MUST_BE_CLOSE`，避免选股结果隐含全日收盘信息提前泄露 |
+| `strategy_id` | string | 是 | 与 `GET /api/strategies` 返回的 `strategy_id` 一致，如 `ma60_five_day_break` |
+
+**响应 200**：`StrategyPickResponse`
+
+```json
+{
+  "trade_date": "2021-03-15",
+  "phase": "close",
+  "strategy_id": "ma60_five_day_break",
+  "strategy_name": "破60日均线买入法",
+  "total": 12,
+  "items": [
+    {
+      "stock_code": "000001.SZ",
+      "stock_name": "平安银行",
+      "open": 20.1,
+      "close": 20.5,
+      "pct_change": 1.02,
+      "volume": 1234567,
+      "limit_up": null,
+      "limit_down": null
+    }
+  ]
+}
+```
+
+> 策略候选项中 `limit_up` / `limit_down` 恒为 `null`。
+
+**错误**：
+
+| HTTP | code | 说明 |
+|------|------|------|
+| 404 | `STRATEGY_NOT_FOUND` | 未知 `strategy_id` |
+| 400 | `PHASE_MUST_BE_CLOSE` | `phase` 非 `close`（开盘阶段禁止查询） |
+| 400 | `STRATEGY_EXECUTE_FAILED` | 策略选股执行异常（如数据不满足），`message` 为原因摘要 |
+
+**备注**：候选中若仅有指数等无 `stock_daily_bar` 当日行的标的，响应列表可能少于策略原始候选条数。
 
 ---
 

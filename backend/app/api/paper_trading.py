@@ -23,6 +23,7 @@ from app.schemas.paper_trading import (
     RecommendResponse,
     ScreenResponse,
     SellRequest,
+    StrategyPickResponse,
     SessionListResponse,
     SessionResponse,
     StockResolveResponse,
@@ -177,6 +178,17 @@ def api_screen(
         ma_golden_cross, macd_golden_cross,
         page, page_size,
     )
+
+
+@router.get("/strategy-picks", response_model=StrategyPickResponse)
+def api_strategy_picks(
+    trade_date: date = Query(...),
+    phase: str = Query(..., description="open / close"),
+    strategy_id: str = Query(..., description="内置策略 strategy_id，与 /api/strategies 列表一致"),
+    db: Session = Depends(get_db),
+):
+    """按内置策略选股口径列出当前模拟日候选股（不写策略执行库）；仅 phase=close 可用。"""
+    return svc.strategy_pick_stocks(db, trade_date, phase, strategy_id)
 
 
 @router.get("/trading-dates", response_model=TradingDatesResponse)
