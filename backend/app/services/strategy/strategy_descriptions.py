@@ -87,6 +87,19 @@ stop_loss_pct=0.10, arm_profit_pct=0.10""",
 
 【关键参数】
 stop_loss_pct=0.08, arm_profit_trigger_pct=0.15, trailing_stop_pct=0.05""",
+    "zao_chen_shi_zi_xing_jian_hua": """【买入条件】
+- 三根K线数值口径与早晨十字星相同：T-2大阴(跌≥2%) + T-1锤头(相对T-2涨跌≤1%) + T阳线(实体≥3%)
+- 不要求跌势结构：不做均线空头、不做T-9至T-3阴线天数与累计跌幅过滤
+- 收盘≤历史最高价的80%（相对主策略50%放宽）
+- 入场：T+1日以开盘价买入（停牌则顺延至下一有效交易日）
+
+【卖出条件】
+- 买入次日起按收盘价监测；先止损后止盈
+- 止损：收盘≤买入价×(1−8%) → 按该日收盘价卖出
+- 止盈：收盘≥买入价×(1+10%) → 按该日收盘价卖出
+
+【关键参数】
+stop_loss_pct=0.08, take_profit_pct=0.10, max_close_to_cum_hist_high_ratio=0.8""",
     "di_wei_lian_yang": """【买入条件】
 - 红三兵：T-2、T-1、T 三连阳线；每日实体涨幅1%～5%（相对开盘）；上影线、下影线各占全日振幅(high-low)的比例均≤25%；收盘三连升；T-1与T日开盘相对前一日收盘高开不超过1%（T-1开盘≤T-2收盘×1.01，T开盘≤T-1收盘×1.01）
 - 股价不太高：收盘≤历史最高价的50%；若MA60有效则收盘<MA60
@@ -180,4 +193,14 @@ pe_entry_threshold=5.0, roe_threshold=15.0, roe_check_periods=3, debt_to_assets_
 
 【关键参数】
 low_position_ratio=1/2, prior_no_bullish_days=20, take_profit_pct=0.10, stop_loss_pct=0.06""",
+    "chun_zheng_ma_duotou": """【策略选股 / execute】
+- 截止日：MA5 > MA10 > MA20 且三线均有值；无低位、首次多头、量能等附加条件
+- 剔除 ST/*ST、北交所
+
+【历史回测 / backtest】
+- 买入：信号日下一交易日开盘价
+- 监测价：买入后自下一根 K 起用收盘价；先 −8% 止损再 +8% 止盈（与破60日均线策略离场一致）
+
+【关键参数】
+take_profit_pct=0.08, stop_loss_pct=0.08（回测用；选股不演算成交）""",
 }

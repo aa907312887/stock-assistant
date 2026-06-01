@@ -1,4 +1,4 @@
-"""APScheduler：交易日 17:00 股票数据同步；17:10/启动后大盘温度；17:20–17:22 若干策略自动选股落库（含红三兵、破 60 日五日在下等）。
+"""APScheduler：交易日 17:00 股票数据同步；17:10/启动后大盘温度；17:20–17:23 若干策略自动选股落库（含红三兵、破 60 日五日在下、早晨十字星简化版等）。
 
 历史累计高低（``cum_hist_*``）在日线写入流程内递推更新，无单独定时任务。
 指数：交易日 17:05 增量日线（见 ``_job_sync_index``）。
@@ -37,6 +37,7 @@ _JOB_STRATEGY_CGHL = "strategy_chong_gao_hui_luo_daily"
 _JOB_STRATEGY_PANIC = "strategy_panic_pullback_daily"
 _JOB_STRATEGY_BCB = "strategy_bottom_consolidation_breakout_daily"
 _JOB_STRATEGY_ZCSZX = "strategy_zao_chen_shi_zi_xing_daily"
+_JOB_STRATEGY_ZCSZXJH = "strategy_zao_chen_shi_zi_xing_jian_hua_daily"
 _JOB_STRATEGY_DWLY = "strategy_di_wei_lian_yang_daily"
 _JOB_STRATEGY_MA60FDB = "strategy_ma60_five_day_break_daily"
 _JOB_SYNC_INDEX = "index_sync_daily"
@@ -244,6 +245,33 @@ def _job_strategy_zao_chen_shi_zi_xing_daily() -> None:
         db.close()
 
 
+def _job_strategy_zao_chen_shi_zi_xing_jian_hua_daily() -> None:
+    """定时任务：交易日每日 17:23（上海时区）筛选「早晨十字星（简化版）」当日候选并落库。"""
+    today = date.today()
+    latest = get_latest_open_trade_date(today)
+    if latest is None or latest != today:
+        logger.info("早晨十字星（简化版）定时筛选跳过：今日非交易日（最近开市日=%s）", latest)
+        return
+
+    db = SessionLocal()
+    try:
+        execute_strategy(db, strategy_id="zao_chen_shi_zi_xing_jian_hua", as_of_date=today)
+        logger.info("早晨十字星（简化版）定时筛选完成 as_of_date=%s", today)
+    except StrategyDataNotReadyError as e:
+        logger.info("早晨十字星（简化版）定时筛选跳过：数据未就绪 as_of_date=%s reason=%s", today, e)
+    except Exception as e:
+        log_scheduled_job_failure(
+            logger,
+            job_id=_JOB_STRATEGY_ZCSZXJH,
+            scheduler_entry="app.core.scheduler._job_strategy_zao_chen_shi_zi_xing_jian_hua_daily",
+            business_callable="app.services.strategy.strategy_execute_service.execute_strategy",
+            external_api=None,
+            exc=e,
+        )
+    finally:
+        db.close()
+
+
 def _job_strategy_di_wei_lian_yang_daily() -> None:
     """定时任务：交易日每日 17:21（上海时区）筛选「红三兵」当日候选并落库（strategy_id=di_wei_lian_yang）。"""
     today = date.today()
@@ -386,6 +414,12 @@ def start_scheduler() -> None:
         _job_strategy_ma60_five_day_break_daily,
         trigger=CronTrigger(hour=17, minute=22, timezone=TIMEZONE),
         id=_JOB_STRATEGY_MA60FDB,
+        replace_existing=True,
+    )
+    _scheduler.add_job(
+        _job_strategy_zao_chen_shi_zi_xing_jian_hua_daily,
+        trigger=CronTrigger(hour=17, minute=23, timezone=TIMEZONE),
+        id=_JOB_STRATEGY_ZCSZXJH,
         replace_existing=True,
     )
     _scheduler.start()

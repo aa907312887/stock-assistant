@@ -368,7 +368,7 @@
                 <el-tooltip placement="top" :show-after="200">
                   <template #content>
                     <div style="max-width: 280px; line-height: 1.6">
-                      仅<strong>收盘后</strong>可查：选股依赖当日完整收盘数据，开盘阶段不提供查询（与 K 线未收盘掩码一致）。按<strong>当前模拟日</strong>与所选内置策略的<strong>选股（execute）</strong>口径列出候选（如破60日均线：当日收盘站上 MA60 且前 5 根均在下方）。推进收盘后若本会话内曾查询过本标签，会自动刷新。本接口<strong>不落库</strong>策略专题「执行」快照。
+                      仅<strong>收盘后</strong>可查：选股依赖当日完整收盘数据，开盘阶段不提供查询（与 K 线未收盘掩码一致）。按<strong>当前模拟日</strong>与所选内置策略的<strong>选股（execute）</strong>口径列出候选（如破60日均线：当日收盘站上 MA60 且前 5 根均在下方；纯正均线多头：当日 MA5&gt;MA10&gt;MA20）。推进收盘后若本会话内曾查询过本标签，会自动刷新。本接口<strong>不落库</strong>策略专题「执行」快照。
                     </div>
                   </template>
                   <el-icon class="strategy-pick-help" tabindex="0" aria-label="策略选股说明"><QuestionFilled /></el-icon>

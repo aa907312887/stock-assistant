@@ -27,6 +27,7 @@ from app.models.simulation_trade import SimulationTrade as SimulationTradeModel
 # (目标涨幅比例, 止损比例)，均为相对买入价的收盘价阈值
 _MONTH_THRESHOLDS_BY_STRATEGY: dict[str, tuple[float, float]] = {
     "ma60_five_day_break": (0.08, 0.08),
+    "chun_zheng_ma_duotou": (0.08, 0.08),
 }
 
 

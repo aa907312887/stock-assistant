@@ -40,6 +40,7 @@
             <el-menu-item index="/strategy/ma60-five-day-break">破60日均线买入法</el-menu-item>
             <el-menu-item index="/strategy/da-yang-hui-luo">大阳回落法</el-menu-item>
             <el-menu-item index="/strategy/zao-chen-shi-zi-xing">早晨十字星</el-menu-item>
+            <el-menu-item index="/strategy/zao-chen-shi-zi-xing-jian-hua">早晨十字星（简化版）</el-menu-item>
             <el-menu-item index="/strategy/di-wei-lian-yang">红三兵</el-menu-item>
             <el-menu-item index="/strategy/pe-value-investment">市盈率长线价值</el-menu-item>
           </el-sub-menu>

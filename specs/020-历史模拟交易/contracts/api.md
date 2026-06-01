@@ -524,7 +524,7 @@
 |------|------|------|------|
 | `trade_date` | string | 是 | 当前模拟日（YYYY-MM-DD） |
 | `phase` | string | 是 | **必须为 `close`**。开盘阶段调用返回 `400 PHASE_MUST_BE_CLOSE`，避免选股结果隐含全日收盘信息提前泄露 |
-| `strategy_id` | string | 是 | 与 `GET /api/strategies` 返回的 `strategy_id` 一致，如 `ma60_five_day_break` |
+| `strategy_id` | string | 是 | 与 `GET /api/strategies` 返回的 `strategy_id` 一致，如 `ma60_five_day_break`、`chun_zheng_ma_duotou`（纯正均线多头排列） |
 
 **响应 200**：`StrategyPickResponse`
 

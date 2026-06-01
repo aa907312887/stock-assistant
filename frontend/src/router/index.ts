@@ -77,6 +77,11 @@ const router = createRouter({
           component: () => import('@/views/ZaoChenShiZiXingView.vue'),
         },
         {
+          path: 'strategy/zao-chen-shi-zi-xing-jian-hua',
+          name: 'strategy-zao-chen-shi-zi-xing-jian-hua',
+          component: () => import('@/views/ZaoChenShiZiXingJianHuaView.vue'),
+        },
+        {
           path: 'strategy/di-wei-lian-yang',
           name: 'strategy-di-wei-lian-yang',
           component: () => import('@/views/DiWeiLianYangView.vue'),
