@@ -263,6 +263,8 @@ export interface ScreenParams {
   volume_max?: number
   ma_golden_cross?: string
   macd_golden_cross?: boolean
+  /** 日/周/月 MACD 柱均为正（与多周期 MACD 策略对齐口径，不含 6 日递增等买入条件） */
+  multi_macd_red?: boolean
   page?: number
   page_size?: number
 }

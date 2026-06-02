@@ -92,6 +92,11 @@ const router = createRouter({
           component: () => import('@/views/PeValueInvestmentView.vue'),
         },
         {
+          path: 'strategy/ri-zhou-yue-macd-quan-hong',
+          name: 'strategy-ri-zhou-yue-macd-quan-hong',
+          component: () => import('@/views/RiZhouYueMacdQuanHongView.vue'),
+        },
+        {
           path: 'backtest/history',
           name: 'backtest-history',
           component: () => import('@/views/HistoryBacktestView.vue'),

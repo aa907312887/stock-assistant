@@ -193,6 +193,32 @@ pe_entry_threshold=5.0, roe_threshold=15.0, roe_check_periods=3, debt_to_assets_
 
 【关键参数】
 low_position_ratio=1/2, prior_no_bullish_days=20, take_profit_pct=0.10, stop_loss_pct=0.06""",
+    "ri_zhou_yue_macd_quan_hong": """【策略选股 / execute】
+- 日线：截止日 macd_hist > 0
+- 周线：trade_week_end ≤ 截止日的最近一根，macd_hist > 0
+- 月线：trade_month_end ≤ 截止日的最近一根，macd_hist > 0
+- 列表展示 macd_red_streak_days：自最近一次绿柱起连续红柱交易日数
+- 不含 6 日递增红柱、涨幅过滤等共振主升浪完整买入条件
+- 剔除 ST/*ST、北交所
+
+【历史回测】
+- 未提供；区间回测请使用 duo_zhou_qi_macd_gong_zhen""",
+    "duo_zhou_qi_macd_gong_zhen": """【买入条件】
+- 股票范围：仅主板（stock_basic.market == "主板"），不买创业板/科创板；剔 ST
+- 日线：D0 绿柱 → D1…D6 连续红柱，且 macd_hist 严格递增（D6=买入日）
+- 涨幅：close(D6) ≥ open(D1) × 110%
+- 共振：买入日对齐的周线、月线最近 bar 的 macd_hist 均 > 0
+- 入场：D6 当日收盘价买入（trigger_date = buy_date）
+
+【卖出条件】
+- 止损：收盘 ≤ 买入价 × 93%（仅亏损侧）
+- 无条件卖出：日线 MACD 红转绿（不论盈亏，含盈利未满 10%）
+- 无条件卖出：连续 3 个交易日收盘下跌（不论盈亏）
+- 移动止盈：收盘曾 ≥ 买入价 × 110% 后，自武装后最高收盘价回撤 3% 收盘卖出
+- 同日多条件：先 7% 止损 → 红转绿 → 三连跌 → 移动止盈
+
+【关键参数】
+gain_filter_pct=0.10, arm_profit_pct=0.10, trailing_drawdown_pct=0.03, stop_loss_pct=0.07""",
     "chun_zheng_ma_duotou": """【策略选股 / execute】
 - 截止日：MA5 > MA10 > MA20 且三线均有值；无低位、首次多头、量能等附加条件
 - 剔除 ST/*ST、北交所

@@ -323,6 +323,20 @@
               <el-form-item label="MACD金叉">
                 <el-switch v-model="screenForm.macd_golden_cross" />
               </el-form-item>
+              <el-form-item>
+                <template #label>
+                  <span>日周月红</span>
+                  <el-tooltip placement="top" :show-after="200">
+                    <template #content>
+                      <div style="max-width: 260px; line-height: 1.6">
+                        当日<strong>日线</strong> MACD 柱为正，且对齐至当前模拟日的<strong>周线、月线</strong>最近一根 K 线 MACD 柱均为正。不含策略「6 日递增红柱」等完整买入条件，便于快捷找共振标的。
+                      </div>
+                    </template>
+                    <el-icon class="screen-field-help" tabindex="0" aria-label="日周月 MACD 红柱说明"><QuestionFilled /></el-icon>
+                  </el-tooltip>
+                </template>
+                <el-switch v-model="screenForm.multi_macd_red" />
+              </el-form-item>
               <el-button type="primary" size="small" style="width: 100%" :disabled="!store.isSessionActive" @click="doScreen">
                 筛选
               </el-button>
@@ -368,7 +382,7 @@
                 <el-tooltip placement="top" :show-after="200">
                   <template #content>
                     <div style="max-width: 280px; line-height: 1.6">
-                      仅<strong>收盘后</strong>可查：选股依赖当日完整收盘数据，开盘阶段不提供查询（与 K 线未收盘掩码一致）。按<strong>当前模拟日</strong>与所选内置策略的<strong>选股（execute）</strong>口径列出候选（如破60日均线：当日收盘站上 MA60 且前 5 根均在下方；纯正均线多头：当日 MA5&gt;MA10&gt;MA20）。推进收盘后若本会话内曾查询过本标签，会自动刷新。本接口<strong>不落库</strong>策略专题「执行」快照。
+                      仅<strong>收盘后</strong>可查：选股依赖当日完整收盘数据，开盘阶段不提供查询（与 K 线未收盘掩码一致）。按<strong>当前模拟日</strong>与所选内置策略的<strong>选股（execute）</strong>口径列出候选（如破60日均线、纯正均线多头、<strong>MACD日周月全红</strong>等）。推进收盘后若本会话内曾查询过本标签，会自动刷新。本接口<strong>不落库</strong>策略专题「执行」快照。
                     </div>
                   </template>
                   <el-icon class="strategy-pick-help" tabindex="0" aria-label="策略选股说明"><QuestionFilled /></el-icon>
@@ -758,6 +772,7 @@ const screenForm = ref({
   pct_change_max: undefined as number | undefined,
   ma_golden_cross: undefined as string | undefined,
   macd_golden_cross: false,
+  multi_macd_red: false,
 })
 
 const buyDialog = ref<{ visible: boolean; stock: StockQuote | null }>({ visible: false, stock: null })
@@ -1369,6 +1384,7 @@ async function doScreen() {
     pct_change_max: screenForm.value.pct_change_max,
     ma_golden_cross: screenForm.value.ma_golden_cross,
     macd_golden_cross: screenForm.value.macd_golden_cross || undefined,
+    multi_macd_red: screenForm.value.multi_macd_red || undefined,
   })
 }
 
@@ -1600,6 +1616,7 @@ function formatPct(pct: number | null) { return pct === null ? '-' : (pct >= 0 ?
 .right-panel :deep(.el-tab-pane) { height: 100%; display: flex; flex-direction: column; overflow: hidden; }
 .tab-toolbar { padding: 6px 12px; border-bottom: 1px solid #ebeef5; }
 .screen-form { padding: 8px 12px; border-bottom: 1px solid #ebeef5; }
+.screen-field-help { margin-left: 2px; font-size: 14px; color: #909399; vertical-align: middle; cursor: help; }
 .screen-result-count { padding: 4px 12px; font-size: 12px; color: #909399; }
 .strategy-pick-panel { display: flex; flex-direction: column; height: 100%; overflow: hidden; }
 .strategy-phase-alert {

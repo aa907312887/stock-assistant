@@ -479,6 +479,7 @@
 | `volume_max` | float | 成交量上限（手） |
 | `ma_golden_cross` | string | 均线金叉类型：`ma5_ma10` / `ma5_ma20` |
 | `macd_golden_cross` | bool | 是否 MACD 金叉（DIF 上穿 DEA） |
+| `multi_macd_red` | bool | 日/周/月 MACD 柱均为正（日线当日 `macd_hist>0`；周/月线按周期末 ≤ `trade_date` 对齐最近一根） |
 | `page` | int | 页码，默认 1 |
 | `page_size` | int | 每页数量，默认 20，最大 100 |
 
@@ -524,7 +525,7 @@
 |------|------|------|------|
 | `trade_date` | string | 是 | 当前模拟日（YYYY-MM-DD） |
 | `phase` | string | 是 | **必须为 `close`**。开盘阶段调用返回 `400 PHASE_MUST_BE_CLOSE`，避免选股结果隐含全日收盘信息提前泄露 |
-| `strategy_id` | string | 是 | 与 `GET /api/strategies` 返回的 `strategy_id` 一致，如 `ma60_five_day_break`、`chun_zheng_ma_duotou`（纯正均线多头排列） |
+| `strategy_id` | string | 是 | 与 `GET /api/strategies` 返回的 `strategy_id` 一致，如 `ma60_five_day_break`、`chun_zheng_ma_duotou`（纯正均线多头排列）、`ri_zhou_yue_macd_quan_hong`（MACD 日周月全红） |
 
 **响应 200**：`StrategyPickResponse`
 

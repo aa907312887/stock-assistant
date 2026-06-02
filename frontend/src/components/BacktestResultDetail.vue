@@ -835,6 +835,10 @@ const EXIT_REASON_LABEL: Record<string, string> = {
   stop_loss_10pct: '止损(约−10%)',
   /** 旧版：曾达+10%后破 MA5 才卖 */
   break_ma5_after_arm: '破MA5(武装后)',
+  stop_loss_7pct: '止损(约−7%)',
+  sell_macd_red_to_green: '卖出(MACD红转绿，不论盈亏)',
+  sell_three_down_days: '卖出(连续3日收跌，不论盈亏)',
+  trailing_take_profit_3pct: '移动止盈(≥+10%后回撤3%)',
 }
 
 function exitReasonLabel(extra: Record<string, unknown> | null | undefined): string {

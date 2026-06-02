@@ -43,6 +43,7 @@
             <el-menu-item index="/strategy/zao-chen-shi-zi-xing-jian-hua">早晨十字星（简化版）</el-menu-item>
             <el-menu-item index="/strategy/di-wei-lian-yang">红三兵</el-menu-item>
             <el-menu-item index="/strategy/pe-value-investment">市盈率长线价值</el-menu-item>
+            <el-menu-item index="/strategy/ri-zhou-yue-macd-quan-hong">MACD日周月全红</el-menu-item>
           </el-sub-menu>
           <el-sub-menu index="backtest">
             <template #title>智能回测</template>

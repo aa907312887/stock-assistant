@@ -83,8 +83,21 @@ onMounted(async () => {
     }
     dataRange.min_date = rangeRes.min_date || ''
     dataRange.max_date = rangeRes.max_date || ''
-  } catch (e) {
-    ElMessage.error('加载配置数据失败')
+  } catch (e: unknown) {
+    const err = e as { message?: string; response?: { status?: number; data?: { detail?: unknown } } }
+    const detail = err.response?.data?.detail
+    const detailMsg =
+      typeof detail === 'string'
+        ? detail
+        : typeof detail === 'object' && detail !== null && 'message' in detail
+          ? String((detail as { message: unknown }).message)
+          : ''
+    const hint =
+      err.response?.status === undefined
+        ? '请确认后端已启动（默认 http://127.0.0.1:8000）且前端 dev 代理正常'
+        : detailMsg || err.message || `HTTP ${err.response?.status}`
+    console.error('模拟配置加载失败', e)
+    ElMessage.error(`加载配置数据失败：${hint}`)
   }
 })
 

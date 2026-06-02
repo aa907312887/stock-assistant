@@ -166,6 +166,10 @@ def api_screen(
     volume_max: Optional[float] = Query(default=None),
     ma_golden_cross: Optional[str] = Query(default=None, description="ma5_ma10 / ma5_ma20"),
     macd_golden_cross: Optional[bool] = Query(default=None),
+    multi_macd_red: Optional[bool] = Query(
+        default=None,
+        description="日/周/月 MACD 柱均为正（macd_hist>0，周月线按周期末对齐模拟日）",
+    ),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
     db: Session = Depends(get_db),
@@ -176,6 +180,7 @@ def api_screen(
         pct_change_min, pct_change_max,
         volume_min, volume_max,
         ma_golden_cross, macd_golden_cross,
+        multi_macd_red,
         page, page_size,
     )
 

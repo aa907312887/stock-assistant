@@ -35,6 +35,10 @@ from app.models.stock_weekly_bar import StockWeeklyBar
 from app.models.stock_basic import StockBasic
 from app.models.stock_financial_report import StockFinancialReport
 from app.services.market_temperature.constants import FORMULA_VERSION
+from app.services.multi_tf_macd_filter import (
+    codes_with_multi_tf_macd_red,
+    load_weekly_monthly_hist_indices,
+)
 from app.schemas.paper_trading import (
     ChartBar,
     ChartDataResponse,
@@ -1344,10 +1348,14 @@ def screen_stocks(
     volume_max: Optional[float],
     ma_golden_cross: Optional[str],
     macd_golden_cross: Optional[bool],
+    multi_macd_red: Optional[bool],
     page: int,
     page_size: int,
 ) -> ScreenResponse:
-    """自定义筛选当日股票。均线/MACD 金叉需与前一日对比。"""
+    """自定义筛选当日股票。均线/MACD 金叉需与前一日对比。
+
+    multi_macd_red：当日日线 macd_hist>0，且对齐周线、月线最近一根均为红柱。
+    """
     q = db.query(StockDailyBar).filter(StockDailyBar.trade_date == trade_date)
 
     if pct_change_min is not None:
@@ -1369,8 +1377,22 @@ def screen_stocks(
     if macd_golden_cross:
         q = q.filter(StockDailyBar.macd_dif > StockDailyBar.macd_dea)
 
-    total = q.count()
-    bars = q.offset((page - 1) * page_size).limit(page_size).all()
+    # 日周月 MACD 红柱：日线柱为正，周/月线按 trade_*_end ≤ trade_date 对齐
+    if multi_macd_red:
+        q = q.filter(StockDailyBar.macd_hist.isnot(None), StockDailyBar.macd_hist > 0)
+
+    if multi_macd_red:
+        bars_all = q.all()
+        codes = [b.stock_code for b in bars_all]
+        weekly_idx, monthly_idx = load_weekly_monthly_hist_indices(db, trade_date, codes)
+        ok_codes = codes_with_multi_tf_macd_red(weekly_idx, monthly_idx, codes, trade_date)
+        bars_all = [b for b in bars_all if b.stock_code in ok_codes]
+        total = len(bars_all)
+        start = (page - 1) * page_size
+        bars = bars_all[start : start + page_size]
+    else:
+        total = q.count()
+        bars = q.offset((page - 1) * page_size).limit(page_size).all()
 
     items = []
     for bar in bars:

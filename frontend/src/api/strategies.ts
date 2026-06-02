@@ -1,4 +1,4 @@
-import axios from 'axios'
+import http from './http'
 
 export type StrategySummary = {
   strategy_id: string
@@ -62,22 +62,30 @@ export type ExecuteStrategyResponse = {
 }
 
 export async function listStrategies() {
-  const res = await axios.get<ListStrategiesResponse>('/api/strategies')
+  const res = await http.get<ListStrategiesResponse>('/strategies')
   return res.data
 }
 
 export async function getStrategy(strategyId: string) {
-  const res = await axios.get<GetStrategyResponse>(`/api/strategies/${strategyId}`)
+  const res = await http.get<GetStrategyResponse>(`/strategies/${strategyId}`)
   return res.data
 }
 
-export async function executeStrategy(strategyId: string, payload?: ExecuteStrategyRequest) {
-  const res = await axios.post<ExecuteStrategyResponse>(`/api/strategies/${strategyId}/execute`, payload ?? {})
+export async function executeStrategy(
+  strategyId: string,
+  payload?: ExecuteStrategyRequest,
+  options?: { timeout?: number }
+) {
+  const res = await http.post<ExecuteStrategyResponse>(
+    `/strategies/${strategyId}/execute`,
+    payload ?? {},
+    options?.timeout != null ? { timeout: options.timeout } : undefined
+  )
   return res.data
 }
 
 export async function getLatestStrategyResult(strategyId: string, params?: { as_of_date?: string }) {
-  const res = await axios.get<ExecuteStrategyResponse>(`/api/strategies/${strategyId}/latest`, { params })
+  const res = await http.get<ExecuteStrategyResponse>(`/strategies/${strategyId}/latest`, { params })
   return res.data
 }
 
