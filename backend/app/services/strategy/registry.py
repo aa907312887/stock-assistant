@@ -22,6 +22,7 @@ from app.services.strategy.strategies.di_wei_lian_yang import DiWeiLianYangStrat
 from app.services.strategy.strategies.chun_zheng_ma_duotou import ChunZhengMaDuotouStrategy
 from app.services.strategy.strategies.duo_zhou_qi_macd_gong_zhen import DuoZhouQiMacdGongZhenStrategy
 from app.services.strategy.strategies.ri_zhou_yue_macd_quan_hong import RiZhouYueMacdQuanHongStrategy
+from app.services.strategy.strategies.lian_xu_da_ban import LianXuDaBanStrategy
 
 
 @dataclass(frozen=True)
@@ -50,6 +51,7 @@ def list_strategies() -> list[StockStrategy]:
         DuoTouPaiLieStrategy(),
         DuoZhouQiMacdGongZhenStrategy(),
         RiZhouYueMacdQuanHongStrategy(),
+        LianXuDaBanStrategy(),
     ]
 
 

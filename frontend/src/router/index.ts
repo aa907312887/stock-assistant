@@ -97,6 +97,11 @@ const router = createRouter({
           component: () => import('@/views/RiZhouYueMacdQuanHongView.vue'),
         },
         {
+          path: 'strategy/lian-xu-da-ban',
+          name: 'strategy-lian-xu-da-ban',
+          component: () => import('@/views/LianXuDaBanView.vue'),
+        },
+        {
           path: 'backtest/history',
           name: 'backtest-history',
           component: () => import('@/views/HistoryBacktestView.vue'),

@@ -44,6 +44,7 @@
             <el-menu-item index="/strategy/di-wei-lian-yang">红三兵</el-menu-item>
             <el-menu-item index="/strategy/pe-value-investment">市盈率长线价值</el-menu-item>
             <el-menu-item index="/strategy/ri-zhou-yue-macd-quan-hong">MACD日周月全红</el-menu-item>
+            <el-menu-item index="/strategy/lian-xu-da-ban">连续打板</el-menu-item>
           </el-sub-menu>
           <el-sub-menu index="backtest">
             <template #title>智能回测</template>

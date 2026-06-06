@@ -837,6 +837,8 @@ const EXIT_REASON_LABEL: Record<string, string> = {
   break_ma5_after_arm: '破MA5(武装后)',
   stop_loss_7pct: '止损(约−7%)',
   sell_macd_red_to_green: '卖出(MACD红转绿，不论盈亏)',
+  /** 连续打板：自持仓期最高收盘价回落≥5% */
+  trailing_stop_from_peak_5pct: '峰值回落5%(最高收盘)',
   sell_three_down_days: '卖出(连续3日收跌，不论盈亏)',
   trailing_take_profit_3pct: '移动止盈(≥+10%后回撤3%)',
 }

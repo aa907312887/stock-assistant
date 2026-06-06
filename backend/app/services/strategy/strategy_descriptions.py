@@ -203,6 +203,22 @@ low_position_ratio=1/2, prior_no_bullish_days=20, take_profit_pct=0.10, stop_los
 
 【历史回测】
 - 未提供；区间回测请使用 duo_zhou_qi_macd_gong_zhen""",
+    "lian_xu_da_ban": """【策略选股 / execute】
+- 截止日：MACD 绿转红；当日首板涨停（涨幅≥10%）；前一交易日非涨停
+- 不判断次日二板
+
+【历史回测 / backtest】
+- 绿转红后 3 日内：首板日涨幅≥10%，续板日涨幅>9.5%（连续二涨停）
+- 入场：续板日（二板）收盘价买入
+- 股票范围：仅主板，剔除 ST
+
+【卖出条件（回测，满足其一）】
+- 峰值回落：收盘 ≤ 持仓期最高收盘价 × 95%（含买入日 peak）
+- MACD 红转绿：前日红柱、当日绿柱，收盘卖
+- 同日两条件：记 MACD 红转绿
+
+【关键参数】
+trailing_drawdown_pct=0.05, green_to_red_window_days=2""",
     "duo_zhou_qi_macd_gong_zhen": """【买入条件】
 - 股票范围：仅主板（stock_basic.market == "主板"），不买创业板/科创板；剔 ST
 - 日线：D0 绿柱 → D1…D6 连续红柱，且 macd_hist 严格递增（D6=买入日）
