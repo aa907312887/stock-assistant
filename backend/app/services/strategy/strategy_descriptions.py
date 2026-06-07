@@ -219,6 +219,20 @@ low_position_ratio=1/2, prior_no_bullish_days=20, take_profit_pct=0.10, stop_los
 
 【关键参数】
 trailing_drawdown_pct=0.05, green_to_red_window_days=2""",
+    "yue_macd_fan_hong": """【策略选股 / execute】
+- 截止日：对齐最近月线 trade_month_end ≤ 截止日；前一月 macd_hist ≤ 0、当月 macd_hist > 0；且截止日 ≥ 红柱月 bar 落盘日、自然月不晚于红柱月
+- 股票范围：仅主板，剔 ST；不演算 ±20% 或月末卖出
+
+【历史模拟 / 历史回测】
+- 买入：上述绿转红后，于红柱月最后一个交易日收盘价买入
+- 卖出（满足其一）：
+  - 收盘盈利 ≥ 20%（相对买入价）
+  - 收盘亏损 ≥ 20%
+  - 买入月之后任一月 MACD 红转绿，于该月最后交易日收盘卖
+- 同日优先级：止损 → 止盈 → 月线红转绿
+
+【关键参数】
+take_profit_pct=0.20, stop_loss_pct=0.20""",
     "duo_zhou_qi_macd_gong_zhen": """【买入条件】
 - 股票范围：仅主板（stock_basic.market == "主板"），不买创业板/科创板；剔 ST
 - 日线：D0 绿柱 → D1…D6 连续红柱，且 macd_hist 严格递增（D6=买入日）

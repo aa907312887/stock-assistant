@@ -102,6 +102,11 @@ const router = createRouter({
           component: () => import('@/views/LianXuDaBanView.vue'),
         },
         {
+          path: 'strategy/yue-macd-fan-hong',
+          name: 'strategy-yue-macd-fan-hong',
+          component: () => import('@/views/YueMacdFanHongView.vue'),
+        },
+        {
           path: 'backtest/history',
           name: 'backtest-history',
           component: () => import('@/views/HistoryBacktestView.vue'),
@@ -110,6 +115,11 @@ const router = createRouter({
           path: 'backtest/simulation',
           name: 'backtest-simulation',
           component: () => import('@/views/HistorySimulationView.vue'),
+        },
+        {
+          path: 'backtest/compound-interest',
+          name: 'backtest-compound-interest',
+          component: () => import('@/views/CompoundInterestView.vue'),
         },
         {
           path: 'paper-trading',

@@ -45,12 +45,14 @@
             <el-menu-item index="/strategy/pe-value-investment">市盈率长线价值</el-menu-item>
             <el-menu-item index="/strategy/ri-zhou-yue-macd-quan-hong">MACD日周月全红</el-menu-item>
             <el-menu-item index="/strategy/lian-xu-da-ban">连续打板</el-menu-item>
+            <el-menu-item index="/strategy/yue-macd-fan-hong">月MACD翻红</el-menu-item>
           </el-sub-menu>
           <el-sub-menu index="backtest">
             <template #title>智能回测</template>
             <el-menu-item index="/backtest/history">历史回测</el-menu-item>
             <el-menu-item index="/backtest/simulation">历史模拟</el-menu-item>
             <el-menu-item index="/paper-trading">历史模拟交易</el-menu-item>
+            <el-menu-item index="/backtest/compound-interest">复利模拟</el-menu-item>
           </el-sub-menu>
         </el-menu>
       </el-aside>

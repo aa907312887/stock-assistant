@@ -841,6 +841,9 @@ const EXIT_REASON_LABEL: Record<string, string> = {
   trailing_stop_from_peak_5pct: '峰值回落5%(最高收盘)',
   sell_three_down_days: '卖出(连续3日收跌，不论盈亏)',
   trailing_take_profit_3pct: '移动止盈(≥+10%后回撤3%)',
+  stop_loss_20pct: '止损(约−20%)',
+  take_profit_20pct: '止盈(≥+20%)',
+  sell_monthly_macd_red_to_green: '卖出(月线MACD红转绿，月末收盘)',
 }
 
 function exitReasonLabel(extra: Record<string, unknown> | null | undefined): string {
