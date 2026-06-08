@@ -1,5 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { useUserStore } from '@/stores/user'
+import ManualTradingListView from '@/views/ManualTradingListView.vue'
+import ManualTradingSessionView from '@/views/ManualTradingSessionView.vue'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -120,6 +122,16 @@ const router = createRouter({
           path: 'backtest/compound-interest',
           name: 'backtest-compound-interest',
           component: () => import('@/views/CompoundInterestView.vue'),
+        },
+        {
+          path: 'backtest/manual-trading',
+          name: 'backtest-manual-trading',
+          component: ManualTradingListView,
+        },
+        {
+          path: 'backtest/manual-trading/:sessionId',
+          name: 'backtest-manual-trading-session',
+          component: ManualTradingSessionView,
         },
         {
           path: 'paper-trading',

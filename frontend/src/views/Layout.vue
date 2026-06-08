@@ -53,6 +53,7 @@
             <el-menu-item index="/backtest/simulation">历史模拟</el-menu-item>
             <el-menu-item index="/paper-trading">历史模拟交易</el-menu-item>
             <el-menu-item index="/backtest/compound-interest">复利模拟</el-menu-item>
+            <el-menu-item index="/backtest/manual-trading">手动模拟交易</el-menu-item>
           </el-sub-menu>
         </el-menu>
       </el-aside>

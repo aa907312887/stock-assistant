@@ -1,45 +1,52 @@
 #!/usr/bin/env python3
-"""
-执行数据库迁移脚本
-"""
+"""执行数据库迁移脚本（paper_trading + manual_trading）。"""
 import sys
 from pathlib import Path
 
-# 添加 backend 目录到 Python 路径
 backend_dir = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(backend_dir))
 
 from sqlalchemy import text
+
 from app.database import engine
 from app.config import settings
 
-def run_migration():
-    """执行 SQL 迁移脚本"""
-    sql_file = Path(__file__).resolve().parent / "add_paper_trading_tables.sql"
 
+def _load_statements(sql_file: Path) -> list[str]:
+    content = sql_file.read_text(encoding="utf-8")
+    lines = [ln for ln in content.splitlines() if not ln.strip().startswith("--")]
+    body = "\n".join(lines)
+    return [s.strip() for s in body.split(";") if s.strip()]
+
+
+def run_sql_file(sql_file: Path) -> bool:
     if not sql_file.exists():
         print(f"❌ SQL 文件不存在: {sql_file}")
         return False
-
+    statements = _load_statements(sql_file)
     try:
-        with open(sql_file, 'r', encoding='utf-8') as f:
-            sql_content = f.read()
-
-        # 分割 SQL 语句（简单处理，按 ; 分割）
-        statements = [s.strip() for s in sql_content.split(';') if s.strip()]
-
         with engine.connect() as conn:
             for stmt in statements:
-                if stmt and not stmt.startswith('--'):
-                    print(f"执行: {stmt[:60]}...")
-                    conn.execute(text(stmt))
+                preview = stmt.split("(")[0].replace("CREATE TABLE IF NOT EXISTS", "").strip().strip("`")
+                print(f"执行: {preview} ...")
+                conn.execute(text(stmt))
             conn.commit()
-
-        print("✅ 数据库迁移成功！")
+        print(f"✅ {sql_file.name} 迁移成功")
         return True
     except Exception as e:
-        print(f"❌ 迁移失败: {e}")
+        print(f"❌ {sql_file.name} 迁移失败: {e}")
         return False
+
+
+def run_migration() -> bool:
+    scripts_dir = Path(__file__).resolve().parent
+    ok = True
+    for name in ("add_paper_trading_tables.sql", "add_manual_trading_tables.sql"):
+        sql_file = scripts_dir / name
+        if sql_file.exists():
+            ok = run_sql_file(sql_file) and ok
+    return ok
+
 
 if __name__ == "__main__":
     print(f"数据库连接: {settings.database_url}")

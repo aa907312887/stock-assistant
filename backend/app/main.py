@@ -19,6 +19,7 @@ from app.api.backtest import router as backtest_router
 from app.api.simulation import router as simulation_router
 from app.api.fundamental import router as fundamental_router
 from app.api.paper_trading import router as paper_trading_router
+from app.api.manual_trading import router as manual_trading_router
 from app.api.index import router as index_router
 from app.core.scheduler import shutdown_scheduler, start_scheduler
 
@@ -85,6 +86,7 @@ app.include_router(backtest_router, prefix="/api")
 app.include_router(simulation_router, prefix="/api")
 app.include_router(fundamental_router, prefix="/api")
 app.include_router(paper_trading_router, prefix="/api")
+app.include_router(manual_trading_router, prefix="/api")
 app.include_router(index_router, prefix="/api")
 
 
